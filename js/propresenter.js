@@ -242,9 +242,13 @@ export function buildPresentation(song, options = {}) {
   const layerUuid = uuid();
 
   // Each group owns its cues; the arrangement then references groups by uuid.
+  // A slide with nothing on it is dropped: someone who cleared a slide in the
+  // editor meant to remove it, not to project a blank.
   const groups = song.groups.map((group) => {
     const groupUuid = uuid();
-    const cues = group.slides.map((lines) => ({ uuid: uuid(), lines, label: group.name }));
+    const cues = group.slides
+      .filter((lines) => lines.some((line) => line.trim() !== ''))
+      .map((lines) => ({ uuid: uuid(), lines, label: group.name }));
     return { ...group, groupUuid, cues };
   });
 
