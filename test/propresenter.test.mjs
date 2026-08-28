@@ -112,6 +112,38 @@ test('slides are 1920x1080 unless told otherwise', () => {
   assert.equal(sub(customSlide, 6)[1][0], 1280);
 });
 
+test('the lyrics element is marked as a text element', () => {
+  // Every text element in real ProPresenter documents carries info = 2.
+  const doc = build();
+  const action = sub(decodeProto(doc[F.cues][0]), 10);
+  const slide = sub(sub(sub(action, 23), 2), 1);
+  const slideElement = sub(slide, 1);
+  assert.equal(slideElement[4][0], 2, 'Slide.Element.info should be 2');
+});
+
+test('cues and their actions are labelled with the section name', () => {
+  const doc = build();
+  const cue = decodeProto(doc[F.cues][0]);
+  assert.equal(str(cue, 2), 'Verse 1');
+  const action = sub(cue, 10);
+  assert.equal(str(action, 2), 'Verse 1');
+  // Action.Label.text is field 2 - field 1 is reserved in the schema.
+  assert.equal(str(sub(action, 3), 2), 'Verse 1');
+});
+
+test('the text box is inset from the slide edge', () => {
+  const doc = build(SONG, { margin: 80, slideSize: { width: 1920, height: 1080 } });
+  const action = sub(decodeProto(doc[F.cues][0]), 10);
+  const slide = sub(sub(sub(action, 23), 2), 1);
+  const bounds = sub(sub(sub(slide, 1), 1), 3);
+  const origin = sub(bounds, 1);
+  const size = sub(bounds, 2);
+  assert.equal(origin[1][0], 80);
+  assert.equal(origin[2][0], 80);
+  assert.equal(size[1][0], 1760);
+  assert.equal(size[2][0], 920);
+});
+
 test('the slide element carries a four-cornered rectangle path', () => {
   const doc = build();
   const action = sub(decodeProto(doc[F.cues][0]), 10);
