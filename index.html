@@ -5,7 +5,11 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Lyric Parser — PDF song sheets to ProPresenter</title>
 <meta name="description" content="Turn a PDF chord chart into ProPresenter song files. Strips chords, keeps section headings, two lines per slide. Runs entirely in your browser.">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; worker-src 'self' blob: https://cdnjs.cloudflare.com; object-src 'none'; base-uri 'self'">
+<!-- connect-src must include the CDN: a cross-origin worker cannot be
+     constructed directly, so pdf.js fetches its worker script and runs it
+     from a blob URL. Without that fetch pdf.js silently falls back to
+     parsing on the main thread, freezing the page on a large PDF. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://cdnjs.cloudflare.com; worker-src 'self' blob:; object-src 'none'; base-uri 'self'">
 <link rel="stylesheet" href="styles.css">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎵</text></svg>">
 </head>
