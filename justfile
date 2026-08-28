@@ -9,7 +9,7 @@ install:
 
 # Run the unit test suite
 test:
-    node --test test/
+    node --test test/*.test.mjs
 
 # Run a single test file, e.g. `just test-one parser`
 test-one NAME:
