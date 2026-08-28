@@ -26,6 +26,17 @@ const ALIGNMENT_CENTER = 2;
 const SHAPE_TYPE_RECTANGLE = 1;
 
 /**
+ * `Slide.Element.info` on a lyrics text element.
+ *
+ * Not documented anywhere, but every text element in real ProPresenter song
+ * documents carries 2 (checked against four files written by ProPresenter
+ * 20.1: "Come Thou Fount", "At the Cross", "Feature Test", "Empty Single
+ * Slide" - the last, which has no text, uses 3). Leaving it at the proto3
+ * default of 0 makes the element unlike anything ProPresenter writes itself.
+ */
+const ELEMENT_INFO_TEXT = 2;
+
+/**
  * The document version claimed in `application_info`.
  *
  * Deliberately conservative: ProPresenter opens documents written by older
@@ -117,16 +128,16 @@ const fontMsg = (style) => (w) => {
 const textAttributesMsg = (style) => (w) => {
   w.message(1, fontMsg(style));
   w.message(3, colorMsg(style.color));
-  w.message(6, (p) => p.enum(1, ALIGNMENT_CENTER));
+  w.message(6, (p) => {
+    p.enum(1, ALIGNMENT_CENTER);
+    p.double(5, 1); // line_height_multiple, as native documents set
+  });
 };
-
-const edgeInsetsMsg = (i) => (w) =>
-  w.double(1, i.left).double(2, i.right).double(3, i.top).double(4, i.bottom);
 
 // ── slide ────────────────────────────────────────────────────────────────────
 
 function slideMsg(lines, options) {
-  const { style, slideSize, margins, uuid } = options;
+  const { style, slideSize, margin, uuid } = options;
   return (w) => {
     // Slide.elements
     w.message(1, (el) => {
@@ -134,11 +145,13 @@ function slideMsg(lines, options) {
       el.message(1, (g) => {
         g.message(1, uuidMsg(uuid()));
         g.string(2, 'Lyrics');
+        // Native documents inset the text box itself and leave the text
+        // margins empty, rather than filling the slide and insetting the text.
         g.message(3, rectMsg({
-          x: 0,
-          y: 0,
-          width: slideSize.width,
-          height: slideSize.height,
+          x: margin,
+          y: margin,
+          width: Math.max(1, slideSize.width - margin * 2),
+          height: Math.max(1, slideSize.height - margin * 2),
         }));
         g.double(5, 1); // opacity
         g.message(8, rectanglePath());
@@ -152,9 +165,9 @@ function slideMsg(lines, options) {
           t.bytes_(5, slideRtf(lines, style));
           t.enum(6, VERTICAL_ALIGNMENT_MIDDLE);
           t.enum(7, SCALE_BEHAVIOR_SCALE_FONT_DOWN);
-          t.message(8, edgeInsetsMsg(margins));
         });
       });
+      el.uint(4, ELEMENT_INFO_TEXT);
     });
     w.message(6, sizeMsg(slideSize)); // Slide.size
     w.message(7, uuidMsg(uuid())); // Slide.uuid
@@ -165,10 +178,15 @@ function cueMsg(lines, options) {
   const { uuid, label } = options;
   return (w) => {
     w.message(1, uuidMsg(options.cueUuid));
+    // Real documents name each cue and repeat the name in the action's label,
+    // which is what shows under the slide. An index is deliberately not
+    // appended: "Verse 1 1" under every slide of Verse 1 is noise.
+    w.string(2, label);
     w.bool(12, true); // isEnabled
     w.message(10, (action) => {
       action.message(1, uuidMsg(uuid()));
       action.string(2, label);
+      action.message(3, (l) => l.string(2, label)); // Action.label.text
       action.bool(6, true); // isEnabled
       action.message(7, (layer) => {
         layer.message(1, uuidMsg(options.layerUuid));
@@ -218,15 +236,11 @@ export function buildPresentation(song, options = {}) {
     color: options.textColor ?? { red: 1, green: 1, blue: 1 },
     alignment: 'center',
   };
-  const margins = { left: margin, right: margin, top: margin, bottom: margin };
-
   const layerUuid = uuid();
 
   // Each group owns its cues; the arrangement then references groups by uuid.
   const groups = song.groups.map((group) => {
     const groupUuid = uuid();
-    // ProPresenter labels the *group*, not each slide, so cues stay unnamed -
-    // repeating "Verse 1" under all four of its slides is noise.
     const cues = group.slides.map((lines) => ({ uuid: uuid(), lines, label: group.name }));
     return { ...group, groupUuid, cues };
   });
@@ -290,7 +304,7 @@ export function buildPresentation(song, options = {}) {
           uuid,
           style,
           slideSize,
-          margins,
+          margin,
         }));
       }
     }

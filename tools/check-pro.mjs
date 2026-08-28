@@ -36,13 +36,35 @@ if (!files.length) {
   process.exit(1);
 }
 
+/**
+ * protoc prints a field it cannot name as "  12: value". That happens when a
+ * field number does not exist in the schema, or lands on a reserved one - and
+ * crucially it does *not* make protoc exit non-zero, so decoding successfully
+ * is not on its own proof that every field number is right.
+ */
+const UNKNOWN_FIELD = /^\s*\d+: /;
+
+let failed = false;
 for (const file of files) {
   const path = join(outDir, file);
-  execFileSync(
+  const decoded = execFileSync(
     'protoc',
     ['--decode=rv.data.Presentation', '--proto_path=proto', 'proto/presentation.proto'],
-    { input: readFileSync(path), stdio: ['pipe', 'ignore', 'inherit'] },
+    { input: readFileSync(path), stdio: ['pipe', 'pipe', 'inherit'], encoding: 'utf8' },
   );
+
+  const unknown = [...new Set(decoded.split('\n').filter((l) => UNKNOWN_FIELD.test(l)))];
+  if (unknown.length) {
+    console.error(`FAIL ${path}: ${unknown.length} field(s) protoc could not name:`);
+    for (const line of unknown.slice(0, 10)) console.error(`       ${line.trim()}`);
+    failed = true;
+    continue;
+  }
   console.log(`ok  ${path}`);
+}
+
+if (failed) {
+  console.error('\nA field number is wrong or reserved. Check js/propresenter.js against proto/.');
+  process.exit(1);
 }
 console.log(`\n${files.length} ProPresenter file(s) decoded cleanly.`);
