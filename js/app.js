@@ -396,9 +396,13 @@ const copySong = (index, trigger) => copyToClipboard(songToText(songs[index]), t
 /**
  * Copy every song as one block.
  *
- * Songs are separated by their title on its own line so the boundary is
- * obvious after pasting; a single song is copied bare, with nothing to
- * delete before importing.
+ * ProPresenter imports one presentation at a time, so a multi-song blob is for
+ * saving or splitting up by hand rather than importing whole - which is why
+ * each song also has its own button. The separator is the song's title on its
+ * own line: on import that would land as a slide of its own, but with several
+ * songs run together there is otherwise nothing to show where one ends.
+ *
+ * A single song is copied bare, so the common case stays import-clean.
  */
 function copyAllSongs(trigger) {
   const text =
