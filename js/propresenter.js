@@ -155,8 +155,11 @@ function slideMsg(lines, options) {
         }));
         g.double(5, 1); // opacity
         g.message(8, rectanglePath());
-        g.message(9, (fill) => {
-          fill.message(1, colorMsg({ red: 0, green: 0, blue: 0, alpha: 0 }));
+        g.emptyableMessage(9, (fill) => {
+          // Fully transparent, so every component is zero and the colour
+          // encodes as an empty message. It still has to be written, or the
+          // oneof selection inside Fill is lost along with it.
+          fill.emptyableMessage(1, colorMsg({ red: 0, green: 0, blue: 0, alpha: 0 }));
           fill.bool(4, false);
         });
         // Graphics.Element.text
