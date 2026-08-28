@@ -160,3 +160,47 @@ test('parses every song in the sample PDF', async () => {
 
   assert.deepEqual(songs.flatMap((s) => s.warnings), []);
 });
+
+test('a parenthesised backing line is lyrics, not a direction', () => {
+  assert.ok(!isAnnotationLine('(Oh oh oh)'));
+  assert.ok(!isAnnotationLine('(sing it out)'));
+  assert.ok(isAnnotationLine('(Play Chorus chords for prayer)'));
+  assert.ok(isAnnotationLine('(Instrumental)'));
+});
+
+test('"Repeat" only counts as a direction when it reads like one', () => {
+  assert.ok(!isAnnotationLine('Repeat the sounding joy'));
+  assert.ok(isAnnotationLine('Repeat'));
+  assert.ok(isAnnotationLine('Repeat x2'));
+  assert.ok(isAnnotationLine('Repeat chorus'));
+});
+
+test('page furniture is dropped', () => {
+  for (const text of ['3', 'Page 2', '2 of 6', '2 / 6']) {
+    assert.ok(isAnnotationLine(text), `expected annotation: ${text}`);
+  }
+});
+
+test('inline ChordPro is lyrics, not a section called "C"', () => {
+  const [song] = parseSongs([
+    line('1. Amazing Grace (G)', { size: 14 }),
+    line('[C]Amazing [F]grace how [G]sweet the [C]sound'),
+    line('That [F]saved a [C]wretch like [G]me'),
+  ]);
+  assert.deepEqual(song.groups, [{
+    name: 'Verse 1',
+    lines: ['Amazing grace how sweet the sound', 'That saved a wretch like me'],
+  }]);
+});
+
+test('a repeated variant section is cued again, not duplicated', () => {
+  const [song] = parseSongs([
+    line('1. Test (C)', { size: 14 }),
+    line('[Chorus]'), line('first words'),
+    line('[Chorus]'), line('other words'),
+    line('[Chorus]'), line('other words'),
+  ]);
+  assert.deepEqual(song.groups.map((g) => g.name), ['Chorus', 'Chorus (2)']);
+  assert.deepEqual(song.arrangement, ['Chorus', 'Chorus (2)', 'Chorus (2)']);
+  assert.equal(song.warnings.length, 1, 'one warning, not one per repeat');
+});

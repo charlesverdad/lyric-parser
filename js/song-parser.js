@@ -17,7 +17,7 @@
  * lyrics whose name matches an earlier section is a repeat reference.
  */
 
-import { isChordLine, isRealChord, stripInlineChords } from './chords.js';
+import { isChordLine, isChordToken, isRealChord, stripInlineChords } from './chords.js';
 
 /** Glyph size ratio above the body text that marks a song title. */
 const TITLE_SIZE_RATIO = 1.15;
@@ -34,26 +34,46 @@ const REPEAT_RE = /(?:^|\s)[xX]\s*(\d+)\b/;
 /** A musical key in a title, e.g. "(G)", "(A#)", "(Bbm)". */
 const KEY_RE = /^[A-G][#b♯♭]?(?:m|min|maj|major|minor)?$/;
 
+/**
+ * Words that mark a parenthesised line as a direction rather than a lyric.
+ *
+ * Parenthesised lines are usually *lyrics* - backing and echo parts like
+ * "(Oh oh oh)" are everywhere in chord charts - so a bare "(...)" test throws
+ * away real words. A direction has to say something directional.
+ */
+const DIRECTIVE_WORDS = new RegExp(
+  // Deliberately excludes common words that also appear in lyrics - "out",
+  // "only", "time" - which would swallow "(sing it out)".
+  String.raw`\b(?:play|plays|chords?|repeat|instrumental|inst|hold|capo|tacet` +
+    String.raw`|solo|acappella|a\s*cappella|spoken|vamp|band|drums?|keys|guitar` +
+    String.raw`|piano|optional|opt|fade|ad\s*lib|\d+\s*times?|last\s+time)\b`,
+  'i',
+);
+
 /** Lines that are performance directions rather than lyrics. */
 const ANNOTATION_RES = [
   /^\d+\/\d+\b/, // time signature, e.g. "4/4 170 BPM"
   /^\d+\s*bpm\b/i,
-  /^\(.*\)$/, // fully parenthesised aside, e.g. "(Play Chorus chords for prayer)"
   /^ends?\s+on\b/i,
-  /^repeat\b/i,
-  /^(?:fine|coda|tacet|outro|segue|rit\.?|a\s*tempo)$/i,
+  // "Repeat", "Repeat x2", "Repeat chorus" - but not "Repeat the sounding joy".
+  /^repeat(?:\s*(?:[xX]\s*\d+|\d+|to\b|from\b|chorus\b|verse\b|bridge\b|intro\b|last\b|as\s+needed\b))?\s*$/i,
+  /^(?:fine|coda|tacet|segue|rit\.?|a\s*tempo)$/i,
   /^d\.[cs]\.(?:\s|$)/i,
   /^capo\b/i,
   /^key\s*:/i,
   /^tempo\s*:/i,
   /^ccli\b/i,
   /^(?:©|\(c\)\s*\d)/i,
+  // Page furniture: "3", "Page 2", "2 of 6".
+  /^(?:page\s*)?\d+(?:\s*(?:of|\/)\s*\d+)?$/i,
 ];
 
 /** Is this line a performance direction rather than a lyric? */
 export function isAnnotationLine(text) {
   const trimmed = text.trim();
   if (trimmed === '') return true;
+  // A parenthesised line is a direction only if it reads like one.
+  if (/^\(.*\)$/.test(trimmed) && DIRECTIVE_WORDS.test(trimmed)) return true;
   return ANNOTATION_RES.some((re) => re.test(trimmed));
 }
 
@@ -139,7 +159,11 @@ function readSections(lines) {
 
   for (const line of lines) {
     const header = line.text.match(SECTION_RE);
-    if (header) {
+    // "[C]Amazing [F]grace" is inline ChordPro, not a section called "C":
+    // the brackets hold a chord and lyrics follow on the same line.
+    const inlineChord =
+      header !== null && header[2].trim() !== '' && isChordToken(header[1]);
+    if (header && !inlineChord) {
       const trailer = header[2].trim();
       const repeat = Number(trailer.match(REPEAT_RE)?.[1] ?? 1);
       const progression = trailer.replace(REPEAT_RE, '').trim();
@@ -152,7 +176,8 @@ function readSections(lines) {
     if (isChordLine(line.text) || isAnnotationLine(line.text)) continue;
 
     const lyric = stripInlineChords(line.text);
-    if (lyric === '') continue;
+    // Stripping can leave nothing but a repeat marker, e.g. "[Am] x2".
+    if (lyric === '' || /^[xX]\s*\d+$/.test(lyric)) continue;
     if (!current) open('Verse 1', 1, false);
     current.lines.push(lyric);
   }
@@ -169,49 +194,48 @@ function readSections(lines) {
 function buildGroups(sections, warnings) {
   const groups = [];
   const arrangement = [];
-  const byName = new Map();
+
+  /** Every group that came from a section with this heading, in order. */
+  const variantsOf = (name) => groups.filter((g) => g.baseName === name);
+
+  const push = (name, times) => {
+    for (let i = 0; i < times; i++) arrangement.push(name);
+  };
 
   for (const section of sections) {
-    const push = (name, times) => {
-      for (let i = 0; i < times; i++) arrangement.push(name);
-    };
+    const variants = variantsOf(section.name);
+    const body = section.lines.join('\n');
 
     if (section.lines.length === 0) {
       // No lyrics: either a repeat reference to an earlier section, or an
       // instrumental break that has nothing to project.
-      if (byName.has(section.name)) push(section.name, section.repeat);
+      if (variants.length) push(variants[0].name, section.repeat);
       continue;
     }
 
-    const existing = byName.get(section.name);
-    if (!existing) {
-      const group = { name: section.name, lines: section.lines };
-      groups.push(group);
-      byName.set(section.name, group);
-      push(section.name, section.repeat);
+    // Match against *every* variant of this heading, not just the first, so a
+    // section printed three times with the same alternate words is cued three
+    // times rather than becoming three identical groups.
+    const existing = variants.find((g) => g.lines.join('\n') === body);
+    if (existing) {
+      push(existing.name, section.repeat);
       continue;
     }
 
-    if (existing.lines.join('\n') === section.lines.join('\n')) {
-      push(section.name, section.repeat);
-      continue;
-    }
-
-    // Same heading, different words — keep both under distinct names so no
+    // Same heading, different words - keep both under distinct names so no
     // lyrics are silently dropped.
-    let suffix = 2;
-    while (byName.has(`${section.name} (${suffix})`)) suffix++;
-    const name = `${section.name} (${suffix})`;
-    const group = { name, lines: section.lines };
-    groups.push(group);
-    byName.set(name, group);
+    const name =
+      variants.length === 0 ? section.name : `${section.name} (${variants.length + 1})`;
+    groups.push({ name, baseName: section.name, lines: section.lines });
     push(name, section.repeat);
-    warnings.push(
-      `Section "${section.name}" appears more than once with different lyrics; kept the second as "${name}".`,
-    );
+    if (variants.length) {
+      warnings.push(
+        `Section "${section.name}" appears more than once with different lyrics; kept the extra one as "${name}".`,
+      );
+    }
   }
 
-  return { groups, arrangement };
+  return { groups: groups.map(({ baseName, ...g }) => g), arrangement };
 }
 
 /**

@@ -27,8 +27,15 @@ const REPEAT_RE = /^[xX]\s*\d+$/;
 /** "No chord" — a rest in the progression. */
 const NO_CHORD_RE = /^(?:N\.?C\.?|NC)$/i;
 
-/** Performance annotations that sit on a chord line, e.g. "(Hold G)". */
-const HOLD_RE = /^\(?(?:hold|let\s+ring|stop|tacet|break)\b/i;
+/**
+ * Words that appear alongside chords as a direction, e.g. "(Hold G)".
+ *
+ * These are only ever furniture *next to a chord*. On their own they are
+ * ordinary words: "Break every chain", "Hold me close" and "Stop and listen"
+ * are lyrics, so a line is never classified from a leading direction word
+ * alone - isChordLine still requires a real chord somewhere on the line.
+ */
+const DIRECTION_RE = /^\(?(?:hold|let|ring|stop|tacet|break|build|out|only|then)\)?$/i;
 
 /**
  * Is this token a chord (or chord-line furniture)?
@@ -74,9 +81,8 @@ export function isRealChord(token) {
 export function isChordLine(text) {
   const trimmed = text.trim();
   if (trimmed === '') return false;
-  if (HOLD_RE.test(trimmed)) return true;
   const tokens = trimmed.split(/\s+/);
-  if (!tokens.every(isChordToken)) return false;
+  if (!tokens.every((t) => isChordToken(t) || DIRECTION_RE.test(t))) return false;
   return tokens.some(isRealChord);
 }
 

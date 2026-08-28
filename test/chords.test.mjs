@@ -46,3 +46,19 @@ test('strips inline ChordPro annotations but keeps bracketed lyrics', () => {
   assert.equal(stripInlineChords('[C]Amazing [F]grace'), 'Amazing grace');
   assert.equal(stripInlineChords('[Verse 1]'), '[Verse 1]');
 });
+
+test('a direction word only counts next to a chord', () => {
+  // "(Hold G)" is chord-line furniture; the same words on their own are lyrics.
+  assert.ok(isChordLine('(Hold G)'));
+  assert.ok(isChordLine('Hold C'));
+  for (const lyric of [
+    'Break every chain',
+    'Break every chain that binds me',
+    'Hold me close',
+    'Stop and listen',
+    'Let ring out the sound',
+    'Out of the depths',
+  ]) {
+    assert.ok(!isChordLine(lyric), `expected lyric: ${lyric}`);
+  }
+});
