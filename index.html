@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lyric Parser — PDF song sheets to ProPresenter</title>
+<meta name="description" content="Turn a PDF chord chart into ProPresenter song files. Strips chords, keeps section headings, two lines per slide. Runs entirely in your browser.">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; worker-src 'self' blob: https://cdnjs.cloudflare.com; object-src 'none'; base-uri 'self'">
+<link rel="stylesheet" href="styles.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎵</text></svg>">
+</head>
+<body>
+
+<header class="masthead">
+  <div class="wrap">
+    <h1>Lyric&nbsp;Parser</h1>
+    <p class="tagline">PDF chord charts &rarr; ProPresenter songs. Chords stripped, headings kept, two lines a slide.</p>
+    <p class="privacy">Everything runs in your browser. No upload, no server, no account.</p>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <section id="drop" class="dropzone" tabindex="0" aria-label="Choose or drop a PDF song sheet">
+    <input type="file" id="file" accept="application/pdf,.pdf" hidden>
+    <div class="dropzone-inner">
+      <svg viewBox="0 0 24 24" width="44" height="44" aria-hidden="true"><path fill="currentColor" d="M12 3a1 1 0 0 1 1 1v9.59l3.3-3.3a1 1 0 1 1 1.4 1.42l-5 5a1 1 0 0 1-1.4 0l-5-5a1 1 0 1 1 1.4-1.42l3.3 3.3V4a1 1 0 0 1 1-1Z"/><path fill="currentColor" d="M4 17a1 1 0 0 1 1 1v1h14v-1a1 1 0 1 1 2 0v1a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-1a1 1 0 0 1 1-1Z"/></svg>
+      <p class="dropzone-title">Drop a PDF song sheet here</p>
+      <p class="dropzone-sub">or <button type="button" id="browse" class="linkish">choose a file</button></p>
+    </div>
+  </section>
+
+  <p id="status" class="status" role="status" aria-live="polite"></p>
+
+  <section id="results" class="results" hidden>
+
+    <div class="toolbar">
+      <div class="settings">
+        <label>Lines per slide
+          <input type="number" id="maxLines" min="1" max="6" value="2">
+        </label>
+        <label>Max characters per line
+          <input type="number" id="maxChars" min="16" max="90" step="1" value="40">
+        </label>
+        <label class="check">
+          <input type="checkbox" id="rejoinHyphens" checked>
+          Rejoin split words <span class="hint" title="Chord charts break words at syllables so a chord sits over the right beat: for-gives, Re-deemed.">?</span>
+        </label>
+        <label class="check">
+          <input type="checkbox" id="straightQuotes">
+          Straighten quotes
+        </label>
+        <details class="advanced">
+          <summary>Slide styling</summary>
+          <div class="advanced-body">
+            <label>Font
+              <input type="text" id="fontFamily" value="Arial">
+            </label>
+            <label>Size (pt)
+              <input type="number" id="fontSize" min="12" max="200" value="64">
+            </label>
+            <label>Slide size
+              <select id="slideSize">
+                <option value="1920x1080" selected>1920 × 1080</option>
+                <option value="1280x720">1280 × 720</option>
+                <option value="3840x2160">3840 × 2160</option>
+                <option value="1024x768">1024 × 768 (4:3)</option>
+              </select>
+            </label>
+          </div>
+        </details>
+      </div>
+
+      <div class="actions">
+        <button type="button" id="downloadAll" class="primary">Download all as .zip</button>
+        <button type="button" id="reset" class="ghost">Start over</button>
+      </div>
+    </div>
+
+    <div id="warnings" class="warnings" hidden></div>
+    <div id="songs" class="songs"></div>
+  </section>
+
+  <section class="about">
+    <h2>What it does</h2>
+    <div class="about-grid">
+      <div>
+        <h3>Reads the real layout</h3>
+        <p>Song sheets are usually two columns. Text is rebuilt from glyph positions and read left column top-to-bottom, then right — not in whatever order the PDF happens to store it.</p>
+      </div>
+      <div>
+        <h3>Strips the chords</h3>
+        <p>A line is chords when every token on it is one. The grammar is strict, so <em>All</em>, <em>And</em>, <em>Grace</em> and <em>Christ</em> stay in the lyrics while <code>F#m7b5</code> and <code>C|C|D|G/B|</code> go.</p>
+      </div>
+      <div>
+        <h3>Rebuilds the lines</h3>
+        <p>Syllable breaks are rejoined (<code>for-gives</code> → <code>forgives</code>), chord-alignment padding collapses, and long lines split into two balanced halves that stay on one slide.</p>
+      </div>
+      <div>
+        <h3>Keeps the structure</h3>
+        <p>Verse, Chorus and Bridge become ProPresenter groups with their usual colours, and an arrangement plays them back in the order the sheet prints — repeats included.</p>
+      </div>
+    </div>
+    <p class="footnote">
+      Output is a ProPresenter <code>.pro</code> document (version 7 and later, including 18 and 21) plus a plain-text copy.
+      Built with <a href="https://mozilla.github.io/pdf.js/">pdf.js</a>.
+      <a href="https://github.com/charlesverdad/lyric-parser">Source on GitHub</a>.
+    </p>
+  </section>
+</main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js" defer></script>
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
