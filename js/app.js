@@ -11,8 +11,8 @@ import { extractLines } from './pdf-text.js';
 import { parseSongs } from './song-parser.js';
 import { normalizeSong } from './lyrics.js';
 import { layoutSong } from './reflow.js';
-import { buildPresentation, proFileName, groupColor } from './propresenter.js';
-import { songToText, textFileName } from './plaintext.js';
+import { groupColor } from './propresenter.js';
+import { toFiles } from './pipeline.js';
 
 pdfjs.GlobalWorkerOptions.workerSrc =
   'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/6.2.108/pdf.worker.min.mjs';
@@ -97,13 +97,39 @@ function relayout() {
   render();
 }
 
-const countSlides = (song) => song.groups.reduce((n, g) => n + g.slides.length, 0);
+/** Slides that would actually be exported: an emptied one is not one. */
+const countGroupSlides = (group) =>
+  group.slides.filter((slide) => slide.some((line) => line.trim() !== '')).length;
+
+const countSlides = (song) => song.groups.reduce((n, g) => n + countGroupSlides(g), 0);
 
 // ── rendering ────────────────────────────────────────────────────────────────
 
 function render() {
   renderWarnings();
   dom.songs.replaceChildren(...songs.map(renderSong));
+  dom.downloadAll.textContent =
+    songs.length === 1 ? 'Download .pro' : 'Download all as .zip';
+}
+
+/**
+ * Refresh the slide tallies after an edit.
+ *
+ * An emptied slide is dropped at export - projecting a blank is never what
+ * someone clearing a box meant - so the counts have to stop including it.
+ */
+function updateCounts() {
+  for (const [songIndex, song] of songs.entries()) {
+    const node = dom.songs.children[songIndex];
+    if (!node) continue;
+    const meta = node.querySelector('.song-meta');
+    if (meta) meta.textContent = `${song.groups.length} sections · ${countSlides(song)} slides`;
+    node.querySelectorAll('.group').forEach((groupNode, groupIndex) => {
+      const count = groupNode.querySelector('.group-count');
+      const n = countGroupSlides(song.groups[groupIndex]);
+      if (count) count.textContent = `${n} slide${n === 1 ? '' : 's'}`;
+    });
+  }
 }
 
 function renderWarnings() {
@@ -153,8 +179,8 @@ function renderSong(song, songIndex) {
   const actions = document.createElement('div');
   actions.className = 'song-actions';
   actions.append(
-    button('Download .pro', 'small', () => downloadPro(song)),
-    button('.txt', 'small', () => downloadText(song)),
+    button('Download .pro', 'small', () => downloadPro(songIndex)),
+    button('.txt', 'small', () => downloadText(songIndex)),
   );
 
   head.append(title, meta, actions);
@@ -223,9 +249,14 @@ function renderSlide(lines, songIndex, groupIndex, slideIndex) {
   area.spellcheck = false;
   area.setAttribute('aria-label', `Slide ${slideIndex + 1}`);
   area.addEventListener('input', () => {
-    songs[songIndex].groups[groupIndex].slides[slideIndex] =
-      area.value.split('\n').map((l) => l.trim()).filter((l) => l !== '');
+    const group = songs[songIndex].groups[groupIndex];
+    group.slides[slideIndex] = area.value
+      .split('\n')
+      .map((l) => l.trim())
+      .filter((l) => l !== '');
     edited = true;
+    node.classList.toggle('empty', group.slides[slideIndex].length === 0);
+    updateCounts();
   });
 
   node.append(index, area);
@@ -255,29 +286,34 @@ function saveBlob(blob, filename) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-function downloadPro(song) {
-  const bytes = buildPresentation(song, readSettings());
-  saveBlob(new Blob([bytes], { type: 'application/octet-stream' }), proFileName(song));
+/** Render the current songs, sharing one de-duplicated set of filenames. */
+const renderFiles = () => toFiles(songs, readSettings());
+
+function downloadPro(index) {
+  const { pro } = renderFiles()[index];
+  saveBlob(new Blob([pro.bytes], { type: 'application/octet-stream' }), pro.name);
 }
 
-function downloadText(song) {
-  saveBlob(new Blob([songToText(song)], { type: 'text/plain' }), textFileName(song));
+function downloadText(index) {
+  const { text } = renderFiles()[index];
+  saveBlob(new Blob([text.text], { type: 'text/plain' }), text.name);
 }
 
 async function downloadAll() {
+  // One song still goes out as a plain .pro - a zip holding a single file is
+  // just an extra step - and the button says so.
   if (songs.length === 1) {
-    downloadPro(songs[0]);
+    downloadPro(0);
     return;
   }
   if (typeof JSZip === 'undefined') {
     setStatus('The zip library did not load; download songs individually.', true);
     return;
   }
-  const options = readSettings();
   const zip = new JSZip();
-  for (const song of songs) {
-    zip.file(proFileName(song), buildPresentation(song, options));
-    zip.file(`text/${textFileName(song)}`, songToText(song));
+  for (const { pro, text } of renderFiles()) {
+    zip.file(pro.name, pro.bytes);
+    zip.file(`text/${text.name}`, text.text);
   }
   const blob = await zip.generateAsync({ type: 'blob' });
   saveBlob(blob, `${sourceName}.zip`);

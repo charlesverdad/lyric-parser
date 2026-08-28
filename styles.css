@@ -236,3 +236,7 @@ a { color: var(--accent); }
   .toolbar { position: static; }
   .slides { grid-template-columns: 1fr; }
 }
+
+/* A slide the user has emptied: kept visible so it can be typed back into,
+   but marked, because it will not be exported. */
+.slide.empty { border-style: dashed; opacity: .6; }
