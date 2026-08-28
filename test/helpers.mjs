@@ -6,6 +6,13 @@ export const FIXTURE = fileURLToPath(
   new URL('../fixtures/sample-input.pdf', import.meta.url),
 );
 
+export const PASTE_FIXTURE = fileURLToPath(
+  new URL('../fixtures/sample-paste.txt', import.meta.url),
+);
+
+/** The sample chart as it arrives when copied out of a PDF viewer. */
+export const samplePaste = () => readFileSync(PASTE_FIXTURE, 'utf8');
+
 let cached;
 
 /** Load the sample chord chart once and share it across test files. */

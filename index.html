@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Lyric Parser — PDF song sheets to ProPresenter</title>
-<meta name="description" content="Turn a PDF chord chart into ProPresenter song files. Strips chords, keeps section headings, two lines per slide. Runs entirely in your browser.">
+<title>Lyric Parser — chord charts to ProPresenter</title>
+<meta name="description" content="Turn a PDF chord chart or pasted lyrics into ProPresenter song files. Strips chords, keeps section headings, two lines per slide. Runs entirely in your browser.">
 <!-- connect-src must include the CDN: a cross-origin worker cannot be
      constructed directly, so pdf.js fetches its worker script and runs it
      from a blob URL. Without that fetch pdf.js silently falls back to
@@ -18,19 +18,37 @@
 <header class="masthead">
   <div class="wrap">
     <h1>Lyric&nbsp;Parser</h1>
-    <p class="tagline">PDF chord charts &rarr; ProPresenter songs. Chords stripped, headings kept, two lines a slide.</p>
+    <p class="tagline">Chord charts &rarr; ProPresenter songs. Drop a PDF or paste the lyrics; chords stripped, headings kept, two lines a slide.</p>
     <p class="privacy">Everything runs in your browser. No upload, no server, no account.</p>
   </div>
 </header>
 
 <main class="wrap">
 
-  <section id="drop" class="dropzone" tabindex="0" aria-label="Choose or drop a PDF song sheet">
-    <input type="file" id="file" accept="application/pdf,.pdf" hidden>
-    <div class="dropzone-inner">
-      <svg viewBox="0 0 24 24" width="44" height="44" aria-hidden="true"><path fill="currentColor" d="M12 3a1 1 0 0 1 1 1v9.59l3.3-3.3a1 1 0 1 1 1.4 1.42l-5 5a1 1 0 0 1-1.4 0l-5-5a1 1 0 1 1 1.4-1.42l3.3 3.3V4a1 1 0 0 1 1-1Z"/><path fill="currentColor" d="M4 17a1 1 0 0 1 1 1v1h14v-1a1 1 0 1 1 2 0v1a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-1a1 1 0 0 1 1-1Z"/></svg>
-      <p class="dropzone-title">Drop a PDF song sheet here</p>
-      <p class="dropzone-sub">or <button type="button" id="browse" class="linkish">choose a file</button></p>
+  <div class="tabs" role="tablist" aria-label="How to supply the lyrics">
+    <button type="button" role="tab" id="tabPdf" class="tab" aria-selected="true" aria-controls="panelPdf">PDF file</button>
+    <button type="button" role="tab" id="tabPaste" class="tab" aria-selected="false" aria-controls="panelPaste">Paste lyrics</button>
+  </div>
+
+  <section id="panelPdf" role="tabpanel" aria-labelledby="tabPdf">
+    <div id="drop" class="dropzone" tabindex="0" aria-label="Choose or drop a PDF song sheet">
+      <input type="file" id="file" accept="application/pdf,.pdf" hidden>
+      <div class="dropzone-inner">
+        <svg viewBox="0 0 24 24" width="44" height="44" aria-hidden="true"><path fill="currentColor" d="M12 3a1 1 0 0 1 1 1v9.59l3.3-3.3a1 1 0 1 1 1.4 1.42l-5 5a1 1 0 0 1-1.4 0l-5-5a1 1 0 1 1 1.4-1.42l3.3 3.3V4a1 1 0 0 1 1-1Z"/><path fill="currentColor" d="M4 17a1 1 0 0 1 1 1v1h14v-1a1 1 0 1 1 2 0v1a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-1a1 1 0 0 1 1-1Z"/></svg>
+        <p class="dropzone-title">Drop a PDF song sheet here</p>
+        <p class="dropzone-sub">or <button type="button" id="browse" class="linkish">choose a file</button></p>
+      </div>
+    </div>
+  </section>
+
+  <section id="panelPaste" role="tabpanel" aria-labelledby="tabPaste" class="paste-panel" hidden>
+    <label class="paste-label" for="paste">Paste the lyrics &mdash; chords and all. Selecting everything in a PDF viewer and copying works fine.</label>
+    <textarea id="paste" class="paste-box" spellcheck="false" rows="14"
+      placeholder="1. Yours Alone (G)&#10;4/4 170 BPM&#10;[Verse 1]&#10;C          G&#10;Oh, what a love is this&#10;C              D&#10;That rescues and for-gives?"></textarea>
+    <div class="paste-actions">
+      <button type="button" id="convert" class="primary">Convert</button>
+      <button type="button" id="pasteSample" class="ghost">Use the example</button>
+      <p class="hint-line">Chord lines, <code>[Verse 1]</code> headings and <code>1. Title (Key)</code> numbering are all understood. Several songs in one paste are split apart.</p>
     </div>
   </section>
 
@@ -76,7 +94,8 @@
       </div>
 
       <div class="actions">
-        <button type="button" id="downloadAll" class="primary">Download all as .zip</button>
+        <button type="button" id="copyAll" class="primary" title="Every song in one block. Use a song's own Copy text button for a clean ProPresenter import.">Copy all as text</button>
+        <button type="button" id="downloadAll" class="ghost">Download all as .zip</button>
         <button type="button" id="reset" class="ghost">Start over</button>
       </div>
     </div>
@@ -88,6 +107,10 @@
   <section class="about">
     <h2>What it does</h2>
     <div class="about-grid">
+      <div>
+        <h3>Takes a file or a paste</h3>
+        <p>Drop in a PDF, or paste the lyrics straight into the box &mdash; chords and all. Either way you get the same slides. Each song&rsquo;s <em>Copy text</em> gives you exactly what ProPresenter&rsquo;s text import wants: a blank line starts a slide, <code>[Chorus 1]</code> names a group.</p>
+      </div>
       <div>
         <h3>Reads the real layout</h3>
         <p>Song sheets are usually two columns. Text is rebuilt from glyph positions and read left column top-to-bottom, then right — not in whatever order the PDF happens to store it.</p>
@@ -106,7 +129,7 @@
       </div>
     </div>
     <p class="footnote">
-      Output is a ProPresenter <code>.pro</code> document (version 7 and later, including 18 and 21) plus a plain-text copy.
+      Output is import-ready text you can copy straight into ProPresenter, or a ProPresenter <code>.pro</code> document (version 7 and later, including 18 and 21).
       Built with <a href="https://mozilla.github.io/pdf.js/">pdf.js</a>.
       <a href="https://github.com/charlesverdad/lyric-parser">Source on GitHub</a>.
     </p>

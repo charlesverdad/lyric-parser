@@ -8,11 +8,13 @@
 
 import * as pdfjs from 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/6.2.108/pdf.min.mjs';
 import { extractLines } from './pdf-text.js';
+import { linesFromText } from './text-input.js';
 import { parseSongs } from './song-parser.js';
 import { normalizeSong } from './lyrics.js';
 import { layoutSong } from './reflow.js';
 import { groupColor } from './propresenter.js';
 import { toFiles } from './pipeline.js';
+import { songToText } from './plaintext.js';
 
 pdfjs.GlobalWorkerOptions.workerSrc =
   'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/6.2.108/pdf.worker.min.mjs';
@@ -21,6 +23,10 @@ const el = (id) => document.getElementById(id);
 
 const dom = {
   drop: el('drop'), file: el('file'), browse: el('browse'), status: el('status'),
+  tabPdf: el('tabPdf'), tabPaste: el('tabPaste'),
+  panelPdf: el('panelPdf'), panelPaste: el('panelPaste'),
+  paste: el('paste'), convert: el('convert'), pasteSample: el('pasteSample'),
+  copyAll: el('copyAll'),
   results: el('results'), songs: el('songs'), warnings: el('warnings'),
   maxLines: el('maxLines'), maxChars: el('maxChars'),
   rejoinHyphens: el('rejoinHyphens'), straightQuotes: el('straightQuotes'),
@@ -28,7 +34,7 @@ const dom = {
   downloadAll: el('downloadAll'), reset: el('reset'),
 };
 
-/** Parsed songs straight from the PDF, before normalisation or layout. */
+/** Parsed songs straight from the input, before normalisation or layout. */
 let parsed = [];
 /** Songs as currently laid out and possibly hand-edited. */
 let songs = [];
@@ -76,8 +82,7 @@ async function loadPdf(file) {
 
     relayout();
     dom.results.hidden = false;
-    const slides = songs.reduce((n, s) => n + countSlides(s), 0);
-    setStatus(`${parsed.length} song${parsed.length === 1 ? '' : 's'}, ${slides} slides. Edit any slide before downloading.`);
+    announceLoaded();
   } catch (error) {
     console.error(error);
     setStatus(`Could not read that PDF: ${error.message}`, true);
@@ -85,6 +90,47 @@ async function loadPdf(file) {
   } finally {
     dom.drop.classList.remove('busy');
   }
+}
+
+/**
+ * Parse pasted lyrics.
+ *
+ * Structure comes from the text itself - chord lines, "[Verse 1]" headings and
+ * "1. Title (Key)" numbering - so copying everything out of a PDF viewer and
+ * pasting it here gives the same slides as opening the PDF.
+ */
+function loadPastedText() {
+  const text = dom.paste.value;
+  if (text.trim() === '') {
+    setStatus('Paste some lyrics first.', true);
+    return;
+  }
+  try {
+    parsed = parseSongs(linesFromText(text));
+    edited = false;
+
+    if (!parsed.length || parsed.every((s) => s.groups.length === 0)) {
+      setStatus('No lyrics found in that text — every line looked like a chord or a direction.', true);
+      dom.results.hidden = true;
+      return;
+    }
+
+    relayout();
+    sourceName = parsed[0].title || 'songs';
+    dom.results.hidden = false;
+    announceLoaded();
+  } catch (error) {
+    console.error(error);
+    setStatus(`Could not parse that text: ${error.message}`, true);
+    dom.results.hidden = true;
+  }
+}
+
+/** Report what was found, once songs are laid out. */
+function announceLoaded() {
+  const slides = songs.reduce((n, s) => n + countSlides(s), 0);
+  const count = `${songs.length} song${songs.length === 1 ? '' : 's'}, ${slides} slides`;
+  setStatus(`${count}. Edit any slide, then copy or download.`);
 }
 
 /** Re-run normalisation and layout from the parsed source, discarding edits. */
@@ -110,6 +156,7 @@ function render() {
   dom.songs.replaceChildren(...songs.map(renderSong));
   dom.downloadAll.textContent =
     songs.length === 1 ? 'Download .pro' : 'Download all as .zip';
+  dom.copyAll.textContent = songs.length === 1 ? 'Copy as text' : 'Copy all as text';
 }
 
 /**
@@ -178,13 +225,15 @@ function renderSong(song, songIndex) {
 
   const actions = document.createElement('div');
   actions.className = 'song-actions';
+  const copy = button('Copy text', 'small copy', () => copySong(songIndex, copy));
   actions.append(
-    button('Download .pro', 'small', () => downloadPro(songIndex)),
+    copy,
+    button('.pro', 'small', () => downloadPro(songIndex)),
     button('.txt', 'small', () => downloadText(songIndex)),
   );
 
   head.append(title, meta, actions);
-  node.append(head);
+  node.append(head, renderTextPreview(songIndex));
 
   if (song.arrangement.length) {
     const arrangement = document.createElement('div');
@@ -205,6 +254,37 @@ function renderSong(song, songIndex) {
   song.groups.forEach((group, groupIndex) => {
     node.append(renderGroup(group, songIndex, groupIndex));
   });
+  return node;
+}
+
+/**
+ * A collapsed view of exactly what "Copy text" puts on the clipboard.
+ *
+ * Filled when opened rather than up front, so it always reflects the current
+ * edits, and so a song with no-one looking at it costs nothing to render. It
+ * also doubles as the fallback when the clipboard is unavailable: the text is
+ * on the page, selectable by hand.
+ */
+function renderTextPreview(songIndex) {
+  const node = document.createElement('details');
+  node.className = 'text-preview';
+
+  const summary = document.createElement('summary');
+  summary.textContent = 'Show the text';
+
+  const area = document.createElement('textarea');
+  area.className = 'preview-box';
+  area.readOnly = true;
+  area.spellcheck = false;
+  area.setAttribute('aria-label', 'Import-ready text');
+
+  node.addEventListener('toggle', () => {
+    if (!node.open) return;
+    area.value = songToText(songs[songIndex]);
+    area.rows = Math.min(24, area.value.split('\n').length + 1);
+  });
+
+  node.append(summary, area);
   return node;
 }
 
@@ -274,6 +354,65 @@ function button(label, className, onClick) {
 
 const cssColor = (c) =>
   `rgb(${Math.round(c.red * 255)} ${Math.round(c.green * 255)} ${Math.round(c.blue * 255)})`;
+
+// ── clipboard ────────────────────────────────────────────────────────────────
+
+/**
+ * Copy text, telling the user which way it went.
+ *
+ * `navigator.clipboard` needs a secure context and can still be refused by
+ * permissions policy, so a failure is expected rather than exceptional: the
+ * preview panel below the song holds the same text, and the message points at
+ * it instead of leaving the button looking broken.
+ */
+async function copyToClipboard(text, trigger) {
+  try {
+    await navigator.clipboard.writeText(text);
+    flash(trigger, 'Copied');
+    return true;
+  } catch (error) {
+    console.error(error);
+    setStatus('Could not reach the clipboard. Open "Show the text" and copy it by hand.', true);
+    return false;
+  }
+}
+
+/** Briefly swap a button's label to confirm the click did something. */
+function flash(node, label) {
+  if (!node) return;
+  const original = node.dataset.label ?? node.textContent;
+  node.dataset.label = original;
+  node.textContent = label;
+  node.classList.add('done');
+  clearTimeout(Number(node.dataset.timer));
+  node.dataset.timer = String(setTimeout(() => {
+    node.textContent = node.dataset.label ?? original;
+    node.classList.remove('done');
+  }, 1400));
+}
+
+const copySong = (index, trigger) => copyToClipboard(songToText(songs[index]), trigger);
+
+/**
+ * Copy every song as one block.
+ *
+ * ProPresenter imports one presentation at a time, so a multi-song blob is for
+ * saving or splitting up by hand rather than importing whole - which is why
+ * each song also has its own button. The separator is the song's title on its
+ * own line: on import that would land as a slide of its own, but with several
+ * songs run together there is otherwise nothing to show where one ends.
+ *
+ * A single song is copied bare, so the common case stays import-clean.
+ */
+function copyAllSongs(trigger) {
+  const text =
+    songs.length === 1
+      ? songToText(songs[0])
+      : songs.map((song) => `${titleLine(song)}\n\n${songToText(song)}`).join('\n');
+  return copyToClipboard(text, trigger);
+}
+
+const titleLine = (song) => (song.key ? `${song.title} (${song.key})` : song.title);
 
 // ── downloads ────────────────────────────────────────────────────────────────
 
@@ -367,11 +506,66 @@ for (const control of [dom.maxLines, dom.maxChars, dom.rejoinHyphens, dom.straig
 }
 
 dom.downloadAll.addEventListener('click', downloadAll);
+dom.copyAll.addEventListener('click', () => copyAllSongs(dom.copyAll));
 dom.reset.addEventListener('click', () => {
   parsed = [];
   songs = [];
   edited = false;
   dom.file.value = '';
+  dom.paste.value = '';
   dom.results.hidden = true;
   setStatus('');
+});
+
+// ── input mode ───────────────────────────────────────────────────────────────
+
+/** Switch between the file and paste inputs. Parsed songs are left alone. */
+function showTab(which) {
+  const paste = which === 'paste';
+  dom.tabPaste.setAttribute('aria-selected', String(paste));
+  dom.tabPdf.setAttribute('aria-selected', String(!paste));
+  dom.panelPaste.hidden = !paste;
+  dom.panelPdf.hidden = paste;
+  if (paste) dom.paste.focus();
+}
+
+dom.tabPdf.addEventListener('click', () => showTab('pdf'));
+dom.tabPaste.addEventListener('click', () => showTab('paste'));
+dom.convert.addEventListener('click', loadPastedText);
+
+// Ctrl/Cmd+Enter converts without reaching for the mouse.
+dom.paste.addEventListener('keydown', (event) => {
+  if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+    event.preventDefault();
+    loadPastedText();
+  }
+});
+
+/** A short worked example, so the expected shape is obvious at a glance. */
+const SAMPLE = [
+  '1. Yours Alone (G)',
+  '4/4 170 BPM',
+  '[Verse 1]',
+  'C                 G',
+  'Oh, what a love is this',
+  'C                   D',
+  'That rescues and for-gives?',
+  'Em                C',
+  'You suffered in our place',
+  'D',
+  'To make us heirs of grace',
+  '[Chorus 1]',
+  'G',
+  'We are Yours alone',
+  'G           Em            D',
+  'Our life, our everything is Yours alone',
+  'G/B',
+  'Oh, King of mercy',
+  'C          Em',
+  'Make our hearts Your throne',
+].join('\n');
+
+dom.pasteSample.addEventListener('click', () => {
+  dom.paste.value = SAMPLE;
+  loadPastedText();
 });
