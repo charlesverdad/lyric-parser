@@ -82,3 +82,17 @@ test('stays fast on a pathologically long line', () => {
   assert.ok(Date.now() - started < 2000, 'wrapLine should not blow up');
   assert.ok(pieces.every((p) => p.length <= 40));
 });
+
+test('a zero or negative line limit does not spin forever', () => {
+  // The UI clamps this, but the module must not hang if called directly.
+  for (const maxLines of [0, -1, 0.5]) {
+    const slides = toSlides(['a b c d e f g h'], { maxLines, maxChars: 4 });
+    assert.ok(slides.length > 0);
+    assert.ok(slides.every((s) => s.length === 1));
+  }
+});
+
+test('a zero character limit still terminates', () => {
+  const slides = toSlides(['one two three'], { maxLines: 2, maxChars: 0 });
+  assert.ok(slides.flat().length > 0);
+});

@@ -100,8 +100,10 @@ export function wrapLine(text, maxChars = DEFAULT_MAX_CHARS) {
  * @returns {string[][]} slides, each an array of projected lines
  */
 export function toSlides(lines, options = {}) {
-  const maxLines = options.maxLines ?? DEFAULT_MAX_LINES;
-  const maxChars = options.maxChars ?? DEFAULT_MAX_CHARS;
+  // Both limits are floored at 1: a zero maxLines makes the overflow loop
+  // below advance by zero and spin forever.
+  const maxLines = Math.max(1, Math.floor(options.maxLines ?? DEFAULT_MAX_LINES));
+  const maxChars = Math.max(1, Math.floor(options.maxChars ?? DEFAULT_MAX_CHARS));
 
   // A source line becomes one unit; wrapping keeps its pieces together so a
   // sentence is never split across a slide boundary.
