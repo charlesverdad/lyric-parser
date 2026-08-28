@@ -1,0 +1,242 @@
+/* Lyric Parser — a single-purpose tool, so the page stays out of the way. */
+
+:root {
+  --bg: #fbfaf8;
+  --surface: #ffffff;
+  --surface-alt: #f3f1ed;
+  --border: #e2ded7;
+  --text: #1d1b18;
+  --muted: #6b655c;
+  --accent: #b4472c;
+  --accent-soft: #fdf1ed;
+  --warn-bg: #fdf6e3;
+  --warn-border: #e8d9a8;
+  --warn-text: #6b551b;
+  --radius: 10px;
+  --shadow: 0 1px 2px rgba(29, 27, 24, .06), 0 4px 14px rgba(29, 27, 24, .05);
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #16151a;
+    --surface: #1e1d23;
+    --surface-alt: #26252c;
+    --border: #34323b;
+    --text: #eceaf0;
+    --muted: #a09aab;
+    --accent: #e8825f;
+    --accent-soft: #2b211e;
+    --warn-bg: #2a2415;
+    --warn-border: #4b4126;
+    --warn-text: #e0cd93;
+    --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 4px 16px rgba(0, 0, 0, .3);
+  }
+}
+
+* { box-sizing: border-box; }
+
+html { scroll-padding-top: 96px; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 16px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+.wrap { max-width: 1080px; margin: 0 auto; padding: 0 24px; }
+
+/* ── masthead ─────────────────────────────────────────────────────────── */
+
+.masthead {
+  padding: 56px 0 40px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+.masthead h1 {
+  margin: 0;
+  font-size: 40px;
+  letter-spacing: -.02em;
+  font-weight: 700;
+}
+.tagline { margin: 10px 0 4px; font-size: 18px; color: var(--muted); max-width: 56ch; }
+.privacy { margin: 0; font-size: 14px; color: var(--muted); opacity: .8; }
+
+main { padding-bottom: 80px; }
+
+/* ── dropzone ─────────────────────────────────────────────────────────── */
+
+.dropzone {
+  margin: 40px 0 0;
+  border: 2px dashed var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+  padding: 56px 24px;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color .15s, background .15s;
+}
+.dropzone:hover, .dropzone:focus-visible { border-color: var(--accent); outline: none; }
+.dropzone.dragging { border-color: var(--accent); background: var(--accent-soft); }
+.dropzone.busy { opacity: .55; pointer-events: none; }
+.dropzone svg { color: var(--muted); margin-bottom: 12px; }
+.dropzone-title { margin: 0; font-size: 19px; font-weight: 600; }
+.dropzone-sub { margin: 6px 0 0; color: var(--muted); font-size: 15px; }
+
+.linkish {
+  border: 0; background: none; padding: 0;
+  color: var(--accent); font: inherit; cursor: pointer; text-decoration: underline;
+}
+
+.status { min-height: 24px; margin: 14px 0 0; color: var(--muted); font-size: 15px; }
+.status.error { color: var(--accent); font-weight: 600; }
+
+/* ── toolbar ──────────────────────────────────────────────────────────── */
+
+.results { margin-top: 32px; }
+
+.toolbar {
+  display: flex; flex-wrap: wrap; gap: 20px; justify-content: space-between; align-items: flex-start;
+  padding: 18px 20px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  /* Sticky so Download-all stays reachable through a long song list. The top
+     corners square off and the shadow deepens once stuck, so content sliding
+     underneath reads as behind it rather than colliding with it. */
+  position: sticky; top: 0; z-index: 5;
+  border-top: 0;
+  border-radius: 0 0 var(--radius) var(--radius);
+  box-shadow: 0 6px 16px -6px rgba(0, 0, 0, .18), var(--shadow);
+}
+.settings { display: flex; flex-wrap: wrap; gap: 18px; align-items: center; }
+.settings label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--muted); }
+.settings label.check { flex-direction: row; align-items: center; gap: 7px; font-size: 14px; color: var(--text); }
+.settings input[type="number"], .settings input[type="text"], .settings select {
+  font: inherit; font-size: 15px;
+  padding: 6px 9px;
+  border: 1px solid var(--border); border-radius: 7px;
+  background: var(--bg); color: var(--text);
+  width: 100px;
+}
+.settings input[type="text"] { width: 130px; }
+.settings select { width: auto; }
+
+.hint {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 16px; height: 16px; border-radius: 50%;
+  background: var(--surface-alt); color: var(--muted);
+  font-size: 11px; cursor: help;
+}
+
+.advanced summary { font-size: 14px; cursor: pointer; color: var(--muted); }
+.advanced-body { display: flex; gap: 14px; flex-wrap: wrap; padding-top: 10px; }
+
+.actions { display: flex; gap: 10px; align-items: center; }
+
+button.primary, button.ghost, button.small {
+  font: inherit; font-weight: 600; cursor: pointer;
+  border-radius: 8px; padding: 9px 16px;
+  border: 1px solid transparent;
+  transition: filter .12s, background .12s;
+}
+button.primary { background: var(--accent); color: #fff; }
+button.primary:hover { filter: brightness(1.07); }
+button.ghost { background: transparent; color: var(--muted); border-color: var(--border); }
+button.ghost:hover { color: var(--text); }
+button.small { padding: 5px 11px; font-size: 13px; background: var(--surface-alt); color: var(--text); border-color: var(--border); }
+button.small:hover { border-color: var(--accent); color: var(--accent); }
+
+/* ── warnings ─────────────────────────────────────────────────────────── */
+
+.warnings {
+  margin-top: 18px; padding: 14px 18px;
+  background: var(--warn-bg); border: 1px solid var(--warn-border);
+  border-radius: var(--radius); color: var(--warn-text); font-size: 14px;
+}
+.warnings h3 { margin: 0 0 6px; font-size: 14px; }
+.warnings ul { margin: 0; padding-left: 20px; }
+
+/* ── songs ────────────────────────────────────────────────────────────── */
+
+.songs { margin-top: 24px; display: flex; flex-direction: column; gap: 28px; }
+
+.song {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden;
+}
+.song-head {
+  display: flex; flex-wrap: wrap; gap: 12px; align-items: baseline; justify-content: space-between;
+  padding: 18px 20px; border-bottom: 1px solid var(--border); background: var(--surface-alt);
+}
+.song-title { margin: 0; font-size: 20px; }
+.song-title .key { color: var(--muted); font-weight: 500; font-size: 16px; margin-left: 6px; }
+.song-meta { color: var(--muted); font-size: 13px; }
+.song-actions { display: flex; gap: 8px; }
+
+.arrangement {
+  padding: 12px 20px; border-bottom: 1px solid var(--border);
+  font-size: 13px; color: var(--muted);
+  display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+}
+.chip {
+  display: inline-block; padding: 2px 9px; border-radius: 20px;
+  background: var(--surface-alt); font-size: 12px; font-weight: 600; color: var(--text);
+  border-left: 3px solid var(--group, var(--border));
+}
+
+.group { padding: 16px 20px; border-bottom: 1px solid var(--border); }
+.group:last-child { border-bottom: 0; }
+.group-head {
+  display: flex; align-items: center; gap: 9px; margin-bottom: 12px;
+}
+.group-swatch { width: 10px; height: 10px; border-radius: 3px; background: var(--group, var(--muted)); }
+.group-name { font-weight: 700; font-size: 15px; }
+.group-count { color: var(--muted); font-size: 13px; font-weight: 400; }
+
+.slides { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+
+.slide {
+  position: relative;
+  background: var(--surface-alt);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px 14px 10px;
+  aspect-ratio: 16 / 9;
+  display: flex; flex-direction: column; justify-content: center;
+}
+.slide-index {
+  position: absolute; top: 6px; left: 9px;
+  font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums;
+}
+.slide textarea {
+  width: 100%; border: 0; background: transparent; resize: none;
+  font: inherit; font-size: 15px; line-height: 1.45; text-align: center;
+  color: var(--text); overflow: hidden;
+}
+.slide textarea:focus { outline: 2px solid var(--accent); outline-offset: 4px; border-radius: 4px; }
+.slide.over-long { border-color: var(--warn-border); }
+
+/* ── about ────────────────────────────────────────────────────────────── */
+
+.about { margin-top: 64px; padding-top: 32px; border-top: 1px solid var(--border); }
+.about h2 { font-size: 18px; margin: 0 0 18px; }
+.about-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 24px; }
+.about-grid h3 { font-size: 15px; margin: 0 0 6px; }
+.about-grid p { margin: 0; font-size: 14px; color: var(--muted); }
+.about code { font-family: var(--mono); font-size: 13px; background: var(--surface-alt); padding: 1px 5px; border-radius: 4px; }
+.footnote { margin-top: 28px; font-size: 13px; color: var(--muted); }
+a { color: var(--accent); }
+
+@media (max-width: 640px) {
+  .masthead { padding: 36px 0 28px; }
+  .masthead h1 { font-size: 30px; }
+  .toolbar { position: static; }
+  .slides { grid-template-columns: 1fr; }
+}
+
+/* A slide the user has emptied: kept visible so it can be typed back into,
+   but marked, because it will not be exported. */
+.slide.empty { border-style: dashed; opacity: .6; }
