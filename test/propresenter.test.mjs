@@ -199,3 +199,19 @@ test('numbers colliding filenames instead of overwriting', () => {
     'Untitled.txt', 'Untitled (2).txt',
   ]);
 });
+
+test('an emptied slide is not exported as a blank cue', () => {
+  const withBlank = {
+    ...SONG,
+    groups: [{ name: 'Verse 1', slides: [['a line'], [], ['', '  ']] }],
+    arrangement: ['Verse 1'],
+  };
+  const doc = build(withBlank);
+  assert.equal(doc[F.cues].length, 1, 'only the slide with words should survive');
+  assert.equal(sub(doc, F.cueGroups)[2].length, 1);
+});
+
+test('a group whose slides are all empty exports no cues', () => {
+  const doc = build({ ...SONG, groups: [{ name: 'Verse 1', slides: [[], ['']] }], arrangement: ['Verse 1'] });
+  assert.equal(doc[F.cues], undefined);
+});
