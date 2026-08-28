@@ -369,3 +369,80 @@ button.done {
   border-color: var(--accent);
   color: var(--accent);
 }
+
+/* ── slide controls ───────────────────────────────────────────────────────── */
+
+.slide-controls {
+  position: absolute; top: 5px; right: 5px;
+  display: flex; gap: 3px;
+  /* Faint until the slide is touched: 108 of these on screen at once should
+     not read as 216 buttons. Focus counts as well as hover, so the controls
+     are reachable from the keyboard. */
+  opacity: 0;
+  transition: opacity .12s;
+}
+.slide:hover .slide-controls,
+.slide:focus-within .slide-controls { opacity: 1; }
+
+.slide-control {
+  font: inherit; font-size: 14px; line-height: 1;
+  width: 22px; height: 22px;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  border: 1px solid var(--border); border-radius: 5px;
+  background: var(--surface); color: var(--muted);
+  padding: 0;
+}
+.slide-control:hover { border-color: var(--accent); color: var(--accent); }
+.slide-control:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; opacity: 1; }
+
+.slide-add {
+  border-style: dashed;
+  background: transparent;
+  color: var(--muted);
+  font: inherit; font-size: 22px; font-weight: 600;
+  cursor: pointer;
+  align-items: center;
+}
+.slide-add:hover { border-color: var(--accent); color: var(--accent); }
+.slide-add:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Touch has no hover, so the controls stay put rather than never appearing. */
+@media (hover: none) {
+  .slide-controls { opacity: 1; }
+}
+
+/* ── export bar ───────────────────────────────────────────────────────────── */
+
+.export-bar {
+  display: flex; flex-wrap: wrap; gap: 16px;
+  align-items: center; justify-content: space-between;
+  margin-top: 20px;
+  padding: 16px 20px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius) var(--radius) 0 0;
+  /* Sticky to the bottom: the export is the last thing you do, and with a
+     hundred slides above it you should not have to scroll to find it. */
+  position: sticky; bottom: 0; z-index: 5;
+  border-bottom: 0;
+  box-shadow: 0 -6px 16px -6px rgba(0, 0, 0, .18), var(--shadow);
+}
+
+.export-summary { display: flex; flex-direction: column; gap: 2px; }
+.export-summary strong { font-size: 15px; }
+.export-summary span { font-size: 13px; color: var(--muted); }
+
+.export-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+
+button.big { padding: 11px 20px; font-size: 15px; }
+
+button:disabled {
+  opacity: .45;
+  cursor: not-allowed;
+  filter: none;
+}
+
+@media (max-width: 640px) {
+  .export-bar { position: static; }
+}

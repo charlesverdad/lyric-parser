@@ -244,13 +244,18 @@ export function buildPresentation(song, options = {}) {
   // Each group owns its cues; the arrangement then references groups by uuid.
   // A slide with nothing on it is dropped: someone who cleared a slide in the
   // editor meant to remove it, not to project a blank.
-  const groups = song.groups.map((group) => {
-    const groupUuid = uuid();
-    const cues = group.slides
-      .filter((lines) => lines.some((line) => line.trim() !== ''))
-      .map((lines) => ({ uuid: uuid(), lines, label: group.name }));
-    return { ...group, groupUuid, cues };
-  });
+  // A group left with no slides at all goes too, along with its place in the
+  // arrangement: an empty group shows up in ProPresenter as a heading that
+  // cues nothing, which is worse than not being there.
+  const groups = song.groups
+    .map((group) => {
+      const groupUuid = uuid();
+      const cues = group.slides
+        .filter((lines) => lines.some((line) => line.trim() !== ''))
+        .map((lines) => ({ uuid: uuid(), lines, label: group.name }));
+      return { ...group, groupUuid, cues };
+    })
+    .filter((group) => group.cues.length > 0);
 
   const byName = new Map(groups.map((g) => [g.name, g]));
   const arrangementUuid = uuid();

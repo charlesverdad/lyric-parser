@@ -20,13 +20,16 @@
  * @returns {string}
  */
 export function songToText(song) {
-  const blocks = song.groups.map((group) => {
-    const slides = group.slides
-      .filter((slide) => slide.some((line) => line.trim() !== ''))
-      .map((slide) => slide.join('\n'))
-      .join('\n\n');
-    return `[${group.name}]\n${slides}`;
-  });
+  const blocks = song.groups
+    .map((group) => ({
+      name: group.name,
+      slides: group.slides.filter((slide) => slide.some((line) => line.trim() !== '')),
+    }))
+    // A group whose slides were all deleted would otherwise leave its heading
+    // behind with nothing under it, and the blank line after it would import
+    // as a slide showing the group name.
+    .filter((group) => group.slides.length > 0)
+    .map((group) => `[${group.name}]\n${group.slides.map((s) => s.join('\n')).join('\n\n')}`);
   return `${blocks.join('\n\n')}\n`;
 }
 
