@@ -5,7 +5,7 @@
   "type": "module",
   "description": "Convert PDF song sheets (chord charts) into ProPresenter files",
   "scripts": {
-    "test": "node --test test/"
+    "test": "node --test test/*.test.mjs"
   },
   "devDependencies": {
     "pdfjs-dist": "6.2.108"
