@@ -111,3 +111,14 @@ test('pasting the chart gives exactly what opening the PDF gives', async () => {
 
   assert.deepEqual(shape(songsFromText(samplePaste())), shape(await songsFromPdf(await sampleDocument())));
 });
+
+test('a section emptied in the editor leaves no heading in the text', async () => {
+  const [song] = await songsFromPdf(await sampleDocument());
+  // Simulate deleting every slide of the second section, as the editor now can.
+  const emptied = { ...song, groups: song.groups.map((g, i) => (i === 1 ? { ...g, slides: [] } : g)) };
+  const text = songToText(emptied);
+
+  assert.ok(!text.includes(`[${song.groups[1].name}]`), 'the emptied heading is gone');
+  assert.ok(text.includes(`[${song.groups[0].name}]`), 'the other headings stay');
+  assert.doesNotMatch(text, /\n\n\n/, 'no double blank left behind');
+});

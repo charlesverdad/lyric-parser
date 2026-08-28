@@ -27,6 +27,7 @@ const dom = {
   panelPdf: el('panelPdf'), panelPaste: el('panelPaste'),
   paste: el('paste'), convert: el('convert'), pasteSample: el('pasteSample'),
   copyAll: el('copyAll'),
+  exportWhat: el('exportWhat'), exportDetail: el('exportDetail'),
   results: el('results'), songs: el('songs'), warnings: el('warnings'),
   maxLines: el('maxLines'), maxChars: el('maxChars'),
   rejoinHyphens: el('rejoinHyphens'), straightQuotes: el('straightQuotes'),
@@ -154,9 +155,7 @@ const countSlides = (song) => song.groups.reduce((n, g) => n + countGroupSlides(
 function render() {
   renderWarnings();
   dom.songs.replaceChildren(...songs.map(renderSong));
-  dom.downloadAll.textContent =
-    songs.length === 1 ? 'Download .pro' : 'Download all as .zip';
-  dom.copyAll.textContent = songs.length === 1 ? 'Copy as text' : 'Copy all as text';
+  updateExport();
 }
 
 /**
@@ -177,6 +176,37 @@ function updateCounts() {
       if (count) count.textContent = `${n} slide${n === 1 ? '' : 's'}`;
     });
   }
+  updateExport();
+}
+
+/**
+ * Keep the export bar describing what the buttons would actually produce.
+ *
+ * Called after every edit, insertion and removal, so the count in the bar is
+ * the count in the file - including slides that were emptied and will be
+ * dropped, and sections that were emptied and will go with them.
+ */
+function updateExport() {
+  const slides = songs.reduce((n, song) => n + countSlides(song), 0);
+  const sections = songs.reduce(
+    (n, song) => n + song.groups.filter((g) => countGroupSlides(g) > 0).length,
+    0,
+  );
+  const one = songs.length === 1;
+
+  dom.exportWhat.textContent = one
+    ? songs[0].title || 'Untitled'
+    : `${songs.length} songs`;
+  dom.exportDetail.textContent =
+    `${sections} section${sections === 1 ? '' : 's'} · ` +
+    `${slides} slide${slides === 1 ? '' : 's'}`;
+
+  dom.downloadAll.textContent = one
+    ? 'Download ProPresenter file'
+    : `Download ${songs.length} ProPresenter files (.zip)`;
+  dom.copyAll.textContent = one ? 'Copy as text' : 'Copy all as text';
+  dom.downloadAll.disabled = slides === 0;
+  dom.copyAll.disabled = slides === 0;
 }
 
 function renderWarnings() {
@@ -310,8 +340,26 @@ function renderGroup(group, songIndex, groupIndex) {
   group.slides.forEach((lines, slideIndex) => {
     slides.append(renderSlide(lines, songIndex, groupIndex, slideIndex));
   });
+  // Appends to the end, and is the only way back into a group whose slides
+  // have all been deleted.
+  slides.append(addSlideCard(songIndex, groupIndex));
 
   node.append(head, slides);
+  return node;
+}
+
+/** The dashed card at the end of a group that appends a blank slide. */
+function addSlideCard(songIndex, groupIndex) {
+  const node = document.createElement('button');
+  node.type = 'button';
+  node.className = 'slide slide-add';
+  node.title = 'Add a slide to the end of this section';
+  node.setAttribute('aria-label', `Add a slide to ${songs[songIndex].groups[groupIndex].name}`);
+  node.textContent = '+';
+  node.addEventListener('click', () => {
+    const group = songs[songIndex].groups[groupIndex];
+    insertSlide(songIndex, groupIndex, group.slides.length);
+  });
   return node;
 }
 
@@ -339,9 +387,76 @@ function renderSlide(lines, songIndex, groupIndex, slideIndex) {
     updateCounts();
   });
 
-  node.append(index, area);
+  const controls = document.createElement('div');
+  controls.className = 'slide-controls';
+  controls.append(
+    iconButton('+', `Add a slide after slide ${slideIndex + 1}`, () =>
+      insertSlide(songIndex, groupIndex, slideIndex + 1),
+    ),
+    iconButton('\u00d7', `Remove slide ${slideIndex + 1}`, () =>
+      removeSlide(songIndex, groupIndex, slideIndex),
+    ),
+  );
+
+  node.append(index, area, controls);
   return node;
 }
+
+/** A small square control that sits on a slide. */
+function iconButton(glyph, label, onClick) {
+  const node = document.createElement('button');
+  node.type = 'button';
+  node.className = 'slide-control';
+  node.textContent = glyph;
+  node.title = label;
+  node.setAttribute('aria-label', label);
+  node.addEventListener('click', onClick);
+  return node;
+}
+
+// ── adding and removing slides ───────────────────────────────────────────────
+
+/**
+ * Insert a blank slide and put the cursor in it.
+ *
+ * Slides carry their index in the closures that update them, so the whole song
+ * is redrawn rather than patched - every slide after the insertion point has
+ * shifted. Redrawing reads from `songs`, which already holds the edits, so
+ * nothing typed is lost.
+ */
+function insertSlide(songIndex, groupIndex, at) {
+  songs[songIndex].groups[groupIndex].slides.splice(at, 0, ['']);
+  edited = true;
+  refreshSong(songIndex);
+  slideTextarea(songIndex, groupIndex, at)?.focus();
+}
+
+/**
+ * Remove a slide outright.
+ *
+ * Distinct from clearing one: an emptied slide stays on screen as a dashed
+ * placeholder you can type back into, whereas this takes it away. Removing the
+ * last slide of a section leaves the section empty, and an empty section is
+ * dropped from both exports.
+ */
+function removeSlide(songIndex, groupIndex, at) {
+  songs[songIndex].groups[groupIndex].slides.splice(at, 1);
+  edited = true;
+  refreshSong(songIndex);
+}
+
+/** Redraw one song in place, leaving the other songs and their edits alone. */
+function refreshSong(songIndex) {
+  const current = dom.songs.children[songIndex];
+  if (!current) return;
+  current.replaceWith(renderSong(songs[songIndex], songIndex));
+  updateExport();
+}
+
+const slideTextarea = (songIndex, groupIndex, slideIndex) =>
+  dom.songs.children[songIndex]
+    ?.querySelectorAll('.group')[groupIndex]
+    ?.querySelectorAll('.slide textarea')[slideIndex];
 
 function button(label, className, onClick) {
   const node = document.createElement('button');

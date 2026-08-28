@@ -94,14 +94,23 @@
       </div>
 
       <div class="actions">
-        <button type="button" id="copyAll" class="primary" title="Every song in one block. Use a song's own Copy text button for a clean ProPresenter import.">Copy all as text</button>
-        <button type="button" id="downloadAll" class="ghost">Download all as .zip</button>
         <button type="button" id="reset" class="ghost">Start over</button>
       </div>
     </div>
 
     <div id="warnings" class="warnings" hidden></div>
     <div id="songs" class="songs"></div>
+
+    <div class="export-bar">
+      <div class="export-summary">
+        <strong id="exportWhat">Ready to export</strong>
+        <span id="exportDetail"></span>
+      </div>
+      <div class="export-actions">
+        <button type="button" id="copyAll" class="ghost" title="Every song in one block. Use a song's own Copy text button for a clean ProPresenter import.">Copy all as text</button>
+        <button type="button" id="downloadAll" class="primary big">Download</button>
+      </div>
+    </div>
   </section>
 
   <section class="about">

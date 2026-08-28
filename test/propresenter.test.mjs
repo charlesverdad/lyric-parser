@@ -215,3 +215,26 @@ test('a group whose slides are all empty exports no cues', () => {
   const doc = build({ ...SONG, groups: [{ name: 'Verse 1', slides: [[], ['']] }], arrangement: ['Verse 1'] });
   assert.equal(doc[F.cues], undefined);
 });
+
+test('a section whose slides were all deleted is dropped, not left empty', () => {
+  const song = {
+    title: 'Edited',
+    key: null,
+    groups: [
+      { name: 'Verse 1', slides: [['Kept line']] },
+      { name: 'Chorus 1', slides: [] },
+      { name: 'Bridge', slides: [['   '], ['']] },
+    ],
+    arrangement: ['Verse 1', 'Chorus 1', 'Bridge'],
+  };
+
+  const doc = decodeProto(buildPresentation(song, { uuid: fakeUuids() }));
+
+  assert.equal(doc[F.cueGroups].length, 1, 'only the section with slides survives');
+  assert.equal(str(sub(sub(doc, F.cueGroups, 0), 1), 2), 'Verse 1');
+  assert.equal(doc[F.cues].length, 1);
+
+  // The arrangement must not point at groups that are no longer there.
+  const arrangement = sub(doc, F.arrangements);
+  assert.equal(arrangement[3].length, 1);
+});

@@ -35,8 +35,11 @@ or download it as a `.pro` file.
 - **Keeps the structure.** Verse, Chorus and Bridge become ProPresenter groups
   in their usual colours, with an arrangement that plays them back in printed
   order — repeats (`x2`, `x5`) included.
-- **Everything is editable** before you download, and every judgement call the
-  parser made is listed above the results.
+- **Everything is editable** before you export: type into any slide, add or
+  remove slides with the controls on each card, and every judgement call the
+  parser made is listed above the results. Clearing a slide leaves a
+  placeholder you can type back into; removing one takes it away, and a section
+  left with no slides drops out of both exports.
 
 ## Two ways in
 
