@@ -56,3 +56,17 @@ test('normalizes a whole song and collects its joins', () => {
   assert.deepEqual(result.groups[0].lines, ['forgives', 'plain line']);
   assert.deepEqual(result.hyphenJoins, ['for-gives → forgives']);
 });
+
+test('rejoins every hyphen in a chain, not every other one', () => {
+  // A pattern that consumes the word after the hyphen skips the next hyphen,
+  // leaving "halle-lujah" with the stray hyphen going onto the slide.
+  assert.equal(normalizeLine('hal-le-lu-jah').text, 'hallelujah');
+  assert.equal(normalizeLine('ac-cep-ted').text, 'accepted');
+  assert.equal(normalizeLine('for-ev-er and ev-er').text, 'forever and ever');
+  assert.ok(!normalizeLine('hal-le-lu-jah').text.includes('-'));
+});
+
+test('reports a chained join as one whole-word join', () => {
+  const { joins } = rejoinSyllableHyphens('hal-le-lu-jah');
+  assert.deepEqual(joins, ['hal-le-lu-jah → hallelujah']);
+});

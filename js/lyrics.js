@@ -31,8 +31,15 @@ const COMPOUND_EXCEPTIONS = new Set([
  */
 const PROPER_PREFIX_MIN = 4;
 
-/** Word characters either side of a hyphen, including apostrophes. */
-const HYPHEN_RE = /(\p{L}[\p{L}’']*)-(\p{Ll}[\p{L}’']*)/gu;
+/**
+ * A whole hyphenated run, e.g. "for-gives" or "hal-le-lu-jah".
+ *
+ * Matching the entire run rather than one hyphen at a time matters: a pattern
+ * that consumes the word to the right of the hyphen resumes past it, so every
+ * second hyphen in a chain is missed and "hal-le-lu-jah" comes out as
+ * "halle-lujah" - with the leftover hyphen going onto the slide.
+ */
+const HYPHEN_RUN_RE = /\p{L}[\p{L}’']*(?:-\p{Ll}[\p{L}’']*)+/gu;
 
 /**
  * Rejoin syllable hyphens: "That rescues and for-gives?" -> "forgives".
@@ -41,14 +48,16 @@ const HYPHEN_RE = /(\p{L}[\p{L}’']*)-(\p{Ll}[\p{L}’']*)/gu;
  */
 export function rejoinSyllableHyphens(text) {
   const joins = [];
-  const out = text.replace(HYPHEN_RE, (match, left, right) => {
+  const out = text.replace(HYPHEN_RUN_RE, (match) => {
     if (COMPOUND_EXCEPTIONS.has(match.toLowerCase())) return match;
+    const [first] = match.split('-');
     // "Christ-like" keeps its hyphen; "Re-deemed" does not.
     const properPrefix =
-      left.length >= PROPER_PREFIX_MIN && left[0] === left[0].toUpperCase();
+      first.length >= PROPER_PREFIX_MIN && first[0] === first[0].toUpperCase();
     if (properPrefix) return match;
-    joins.push(`${match} → ${left}${right}`);
-    return `${left}${right}`;
+    const joined = match.replace(/-/g, '');
+    joins.push(`${match} → ${joined}`);
+    return joined;
   });
   return { text: out, joins };
 }
