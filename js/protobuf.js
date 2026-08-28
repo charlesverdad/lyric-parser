@@ -25,8 +25,23 @@ export class Writer {
     this.bytes = [];
   }
 
-  /** Raw base-128 varint. */
+  /**
+   * Raw base-128 varint.
+   *
+   * Negative values are sign-extended to the full ten bytes protobuf uses for
+   * a negative `int64`; emitting them as if unsigned produces an unterminated
+   * varint that no decoder can read.
+   */
   varint(value) {
+    if (!Number.isFinite(value)) {
+      throw new RangeError(`cannot encode ${value} as a varint`);
+    }
+    if (!Number.isSafeInteger(value)) {
+      throw new RangeError(
+        `${value} is outside the safe integer range and would be rounded`,
+      );
+    }
+    if (value < 0) return this.negativeVarint(value);
     let v = value;
     while (v > 0x7f) {
       this.bytes.push((v & 0x7f) | 0x80);
@@ -36,13 +51,24 @@ export class Writer {
     return this;
   }
 
+  /** Two's-complement 64-bit varint, always ten bytes. */
+  negativeVarint(value) {
+    let v = BigInt.asUintN(64, BigInt(value));
+    for (let i = 0; i < 9; i++) {
+      this.bytes.push(Number(v & 0x7fn) | 0x80);
+      v >>= 7n;
+    }
+    this.bytes.push(Number(v & 0x7fn));
+    return this;
+  }
+
   tag(field, wireType) {
     return this.varint(field * 8 + wireType);
   }
 
-  /** uint32 / uint64 / enum. Omitted when zero. */
+  /** uint32 / uint64 / int64 / enum. Omitted when zero. */
   uint(field, value) {
-    if (!value) return this;
+    if (value === 0) return this;
     return this.tag(field, WIRE_VARINT).varint(value);
   }
 
@@ -58,7 +84,10 @@ export class Writer {
 
   /** double (fixed64, little-endian IEEE-754). Omitted when zero. */
   double(field, value) {
-    if (!value) return this;
+    if (!Number.isFinite(value)) {
+      throw new RangeError(`cannot encode ${value} as a double`);
+    }
+    if (value === 0) return this;
     this.tag(field, WIRE_FIXED64);
     const buf = new ArrayBuffer(8);
     new DataView(buf).setFloat64(0, value, true);
@@ -68,7 +97,10 @@ export class Writer {
 
   /** float (fixed32, little-endian). Omitted when zero. */
   float(field, value) {
-    if (!value) return this;
+    if (!Number.isFinite(value)) {
+      throw new RangeError(`cannot encode ${value} as a float`);
+    }
+    if (value === 0) return this;
     this.tag(field, 5);
     const buf = new ArrayBuffer(4);
     new DataView(buf).setFloat32(0, value, true);

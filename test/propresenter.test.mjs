@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildPresentation, proFileName, groupColor } from '../js/propresenter.js';
 import { songToText, textFileName } from '../js/plaintext.js';
+import { uniqueNames } from '../js/pipeline.js';
 import { decodeProto, sub, str, fakeUuids } from './helpers.mjs';
 
 // Presentation field numbers, from proto/presentation.proto.
@@ -178,5 +179,23 @@ test('plain-text export separates slides by a blank line under a group heading',
   const text = songToText(SONG);
   assert.match(text, /\[Verse 1\]\nOh, what a love is this\nThat rescues and forgives\?\n\nYou suffered in our place/);
   assert.match(text, /\[Chorus 1\]\nWe are Yours alone/);
-  assert.match(text, /Arrangement: Verse 1 \| Chorus 1 \| Verse 1/);
+});
+
+test('plain-text export writes nothing that would import as a stray slide', () => {
+  // A title banner or arrangement footer is separated by a blank line, so
+  // ProPresenter would import it as an extra slide of "lyrics".
+  const text = songToText(SONG);
+  assert.ok(!text.includes('Arrangement:'), 'arrangement footer would be a slide');
+  assert.ok(!text.includes('Key:'), 'key header would be a slide');
+  assert.ok(text.startsWith('[Verse 1]'), `unexpected leading block: ${text.slice(0, 40)}`);
+});
+
+test('numbers colliding filenames instead of overwriting', () => {
+  assert.deepEqual(
+    uniqueNames(['A.pro', 'B.pro', 'A.pro', 'A.pro']),
+    ['A.pro', 'B.pro', 'A (2).pro', 'A (3).pro'],
+  );
+  assert.deepEqual(uniqueNames(['Untitled.txt', 'Untitled.txt']), [
+    'Untitled.txt', 'Untitled (2).txt',
+  ]);
 });

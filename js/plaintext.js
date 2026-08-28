@@ -8,29 +8,26 @@
  */
 
 /**
- * @param {{title: string, key?: string|null, groups: {name: string, slides: string[][]}[], arrangement: string[]}} song
- * @param {{includeArrangement?: boolean}} [options]
+ * Render a song as an import-shaped text file.
+ *
+ * Only group headings and slides are written. A title banner or an
+ * "Arrangement: ..." footer would each be separated by a blank line and so
+ * would import as *extra slides*, projecting the metadata as if it were
+ * lyrics. The title and key live in the filename instead, and the arrangement
+ * only exists in the `.pro`, which is the format that models one.
+ *
+ * @param {{title: string, key?: string|null, groups: {name: string, slides: string[][]}[]}} song
  * @returns {string}
  */
-export function songToText(song, options = {}) {
-  const { includeArrangement = true } = options;
-  const blocks = [];
-
-  for (const group of song.groups) {
-    const slides = group.slides.map((slide) => slide.join('\n')).join('\n\n');
-    blocks.push(`[${group.name}]\n${slides}`);
-  }
-
-  const header = [song.title, song.key ? `Key: ${song.key}` : null]
-    .filter(Boolean)
-    .join('\n');
-
-  const footer =
-    includeArrangement && song.arrangement.length
-      ? `\n\nArrangement: ${song.arrangement.join(' | ')}`
-      : '';
-
-  return `${header}\n\n${blocks.join('\n\n')}${footer}\n`;
+export function songToText(song) {
+  const blocks = song.groups.map((group) => {
+    const slides = group.slides
+      .filter((slide) => slide.some((line) => line.trim() !== ''))
+      .map((slide) => slide.join('\n'))
+      .join('\n\n');
+    return `[${group.name}]\n${slides}`;
+  });
+  return `${blocks.join('\n\n')}\n`;
 }
 
 /** A filesystem-safe name for a song's `.txt` file. */

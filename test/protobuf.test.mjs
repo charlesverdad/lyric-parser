@@ -52,3 +52,23 @@ test('repeated fields accumulate in order', () => {
   }));
   assert.deepEqual(decoded[3].map((b) => new TextDecoder().decode(b)), ['a', 'b', 'c']);
 });
+
+test('encodes a negative int64 as a full ten-byte varint', () => {
+  // Emitting a negative value as if unsigned yields an unterminated varint
+  // that no decoder can read.
+  assert.equal(hex(encode((w) => w.uint(1, -1))), '08 ff ff ff ff ff ff ff ff ff 01');
+  const decoded = encode((w) => w.uint(1, -1234567));
+  assert.equal(decoded.length, 11);
+});
+
+test('rejects values it cannot encode losslessly', () => {
+  assert.throws(() => encode((w) => w.uint(1, 2 ** 60)), RangeError);
+  assert.throws(() => encode((w) => w.double(1, NaN)), RangeError);
+  assert.throws(() => encode((w) => w.double(1, Infinity)), RangeError);
+  assert.throws(() => encode((w) => w.float(1, NaN)), RangeError);
+});
+
+test('does not mistake NaN for a proto3 default', () => {
+  // `if (!value)` silently drops NaN as though it were zero.
+  assert.throws(() => encode((w) => w.double(1, NaN)), RangeError);
+});
