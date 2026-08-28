@@ -1,0 +1,13 @@
+{
+  "name": "lyric-parser",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Convert PDF song sheets (chord charts) into ProPresenter files",
+  "scripts": {
+    "test": "node --test test/"
+  },
+  "devDependencies": {
+    "pdfjs-dist": "6.2.108"
+  }
+}
