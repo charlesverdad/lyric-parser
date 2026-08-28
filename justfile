@@ -33,12 +33,7 @@ verify-pro FILE:
       --proto_path=proto \
       proto/presentation.proto < {{FILE}} | head -100
 
-# Full check: tests + round-trip protoc validation of the sample fixture
+# Full check: tests, then decode every generated .pro with protoc.
+# This is exactly what CI runs.
 check: test
-    node tools/convert.mjs fixtures/sample-input.pdf out
-    for f in out/*.pro; do \
-      echo "== $f"; \
-      protoc --decode=rv.data.Presentation --proto_path=proto proto/presentation.proto < "$f" > /dev/null \
-        || exit 1; \
-    done
-    @echo "All generated .pro files decode cleanly."
+    node tools/check-pro.mjs
