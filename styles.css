@@ -240,3 +240,132 @@ a { color: var(--accent); }
 /* A slide the user has emptied: kept visible so it can be typed back into,
    but marked, because it will not be exported. */
 .slide.empty { border-style: dashed; opacity: .6; }
+
+/* ── input mode tabs ──────────────────────────────────────────────────────── */
+
+.tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.tab {
+  appearance: none;
+  border: 1px solid transparent;
+  border-bottom: none;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-weight: 600;
+  padding: 9px 16px;
+  border-radius: var(--radius) var(--radius) 0 0;
+  cursor: pointer;
+  margin-bottom: -1px;
+}
+
+.tab:hover { color: var(--text); }
+
+.tab[aria-selected="true"] {
+  background: var(--surface);
+  border-color: var(--border);
+  color: var(--text);
+  border-bottom: 1px solid var(--surface);
+}
+
+.tab:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* ── paste input ──────────────────────────────────────────────────────────── */
+
+.paste-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 18px;
+}
+
+.paste-label {
+  display: block;
+  color: var(--muted);
+  font-size: .92rem;
+  margin-bottom: 10px;
+}
+
+.paste-box {
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+  font-family: var(--mono);
+  font-size: .86rem;
+  line-height: 1.5;
+  /* Chord charts are column-aligned; wrapping them would scramble the
+     alignment the user is looking at while they check their paste. */
+  white-space: pre;
+  overflow-x: auto;
+  padding: 12px;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.paste-box:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.paste-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.hint-line {
+  margin: 0;
+  flex: 1 1 260px;
+  color: var(--muted);
+  font-size: .84rem;
+}
+
+/* ── copyable text output ─────────────────────────────────────────────────── */
+
+.text-preview {
+  margin: 0 0 14px;
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+}
+
+.text-preview > summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: .85rem;
+  user-select: none;
+}
+
+.text-preview > summary:hover { color: var(--text); }
+
+.preview-box {
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 10px;
+  resize: vertical;
+  font-family: var(--mono);
+  font-size: .82rem;
+  line-height: 1.55;
+  padding: 12px;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+button.done {
+  border-color: var(--accent);
+  color: var(--accent);
+}

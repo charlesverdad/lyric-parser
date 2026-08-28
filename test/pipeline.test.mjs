@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { songsFromPdf, toProFile, toTextFile } from '../js/pipeline.js';
-import { sampleDocument, decodeProto, sub, str, fakeUuids } from './helpers.mjs';
+import { songsFromPdf, songsFromText, toProFile, toTextFile } from '../js/pipeline.js';
+import { songToText } from '../js/plaintext.js';
+import { sampleDocument, samplePaste, decodeProto, sub, str, fakeUuids } from './helpers.mjs';
 
 const CUES = 13;
 
@@ -91,4 +92,22 @@ test('hyphen rejoining can be disabled through the pipeline', async () => {
   const lines = (songs) => songs.flatMap((s) => s.groups.flatMap((g) => g.slides.flat()));
   assert.ok(lines(joined).some((l) => l.includes('forgives')));
   assert.ok(lines(kept).some((l) => l.includes('for-gives')));
+});
+
+
+test('pasting the chart gives exactly what opening the PDF gives', async () => {
+  // The two inputs share everything from `parseSongs` onward, and this is what
+  // holds them to it: copying a chart out of a PDF viewer and pasting it must
+  // not quietly produce different slides from the file it came from.
+  const shape = (songs) =>
+    songs.map((song) => ({
+      title: song.title,
+      key: song.key,
+      note: song.note,
+      arrangement: song.arrangement,
+      groups: song.groups.map((g) => ({ name: g.name, slides: g.slides })),
+      text: songToText(song),
+    }));
+
+  assert.deepEqual(shape(songsFromText(samplePaste())), shape(await songsFromPdf(await sampleDocument())));
 });

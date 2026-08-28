@@ -1,11 +1,12 @@
 # Lyric Parser
 
-**Turn a PDF chord chart into ProPresenter song files, entirely in your browser.**
+**Turn a chord chart into ProPresenter song files, entirely in your browser.**
 
 Drop in a song sheet — the two-column, chords-above-lyrics kind a worship team
-prints — and get back one ProPresenter document per song, with the chords
-stripped, the section headings kept, and the lyrics re-laid-out two lines to a
-slide.
+prints — or just paste the lyrics in, and get back one ProPresenter document
+per song, with the chords stripped, the section headings kept, and the lyrics
+re-laid-out two lines to a slide. Copy the result straight into ProPresenter,
+or download it as a `.pro` file.
 
 **[Open Lyric Parser](https://charlesverdad.github.io/lyric-parser/)**
 
@@ -18,6 +19,10 @@ slide.
 | `overcome with joy I     sing` | `overcome with joy I sing` |
 | `[Intro] C\|C\|D\|G/B\| x2` | *(instrumental — no slide)* |
 
+- **Takes a file or a paste.** Drop in a PDF, or paste the lyrics — chords and
+  all — into the box. Both go through the same pipeline from the point the
+  lines are read onward, so pasting a chart gives exactly what opening it does.
+  A test holds the two together.
 - **Reads the real layout.** Song sheets are usually two columns. Lines are
   rebuilt from glyph positions and read left column top-to-bottom, then right —
   not in whatever order the PDF happens to store them.
@@ -33,13 +38,31 @@ slide.
 - **Everything is editable** before you download, and every judgement call the
   parser made is listed above the results.
 
+## Two ways in
+
+**PDF.** Structure is recovered from glyph geometry: column gutters, reading
+order, and title lines found by their size.
+
+**Pasted text.** There is no geometry, so structure comes from the text itself
+— chord lines above lyric lines, `[Verse 1]` headings, and `1. Title (Key)`
+numbering. That is exactly the shape you get from selecting everything in a PDF
+viewer and copying, so a paste and the file it came from parse the same. When a
+paste has no numbering, the first line is taken as the title only if it is
+followed by a blank line or a section heading — a paste that opens straight
+into lyrics keeps every line.
+
 ## Output format
 
-ProPresenter 7 and later — including 18 and 21 — store `.pro` documents as
-protocol buffers. This writes that format directly, with no protobuf runtime
-shipped to the browser. A plain-text copy is written alongside, which
-ProPresenter also imports and which survives any future change to the binary
-format.
+Two forms, both from the same laid-out songs:
+
+**Import-ready text**, shown next to each song and copied with one click. A
+blank line starts a new slide and `[Chorus 1]` names a group, which is what
+ProPresenter's text import expects — so it can go straight in with no file
+involved.
+
+**A `.pro` document.** — including 18 and 21 — stores `.pro` documents as protocol buffers. This
+writes that format directly, with no protobuf runtime shipped to the browser.
+It carries the group colours and the arrangement, which plain text cannot.
 
 Field definitions are the reverse-engineered ones from
 [greyshirtguy/ProPresenter7-Proto](https://github.com/greyshirtguy/ProPresenter7-Proto),
@@ -54,6 +77,7 @@ js/
   app.js            browser wiring: load, render, edit, download
   pipeline.js       the whole conversion, shared by app and CLI
   pdf-text.js       glyph positions -> reading-ordered lines
+  text-input.js     pasted text -> the same lines
   chords.js         chord grammar
   song-parser.js    lines -> songs, sections, arrangements
   lyrics.js         syllable rejoining, padding collapse
@@ -99,7 +123,8 @@ node tools/dump-slides.mjs input.pdf   # final slides
 
 ## Privacy
 
-No backend. The PDF is read in the browser and never leaves the machine. The
+No backend. The PDF or pasted text is read in the browser and never leaves the
+machine. The
 only network requests are the initial page load and two libraries from cdnjs
 (pdf.js and JSZip), which a Content-Security-Policy restricts the page to.
 

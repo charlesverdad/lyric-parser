@@ -6,6 +6,7 @@
  */
 
 import { extractLines } from './pdf-text.js';
+import { linesFromText } from './text-input.js';
 import { parseSongs } from './song-parser.js';
 import { normalizeSong } from './lyrics.js';
 import { layoutSong } from './reflow.js';
@@ -27,7 +28,25 @@ import { songToText, textFileName } from './plaintext.js';
  * @param {ConvertOptions} [options]
  */
 export async function songsFromPdf(pdfDoc, options = {}) {
-  const lines = await extractLines(pdfDoc);
+  return songsFromLines(await extractLines(pdfDoc), options);
+}
+
+/**
+ * Parse pasted lyrics into laid-out songs.
+ *
+ * Same pipeline as `songsFromPdf` from `parseSongs` onward - only the way the
+ * lines are obtained differs - so pasting the text of a chart gives the same
+ * slides as opening the chart itself.
+ *
+ * @param {string} text Raw pasted text.
+ * @param {ConvertOptions} [options]
+ */
+export function songsFromText(text, options = {}) {
+  return songsFromLines(linesFromText(text), options);
+}
+
+/** Shared tail of both entry points: structure, normalise, lay out. */
+function songsFromLines(lines, options) {
   return parseSongs(lines)
     .map((song) => normalizeSong(song, options))
     .map((song) => layoutSong(song, options));
