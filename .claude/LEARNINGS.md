@@ -37,6 +37,25 @@ Notes worth carrying into similar work. Concise on purpose.
 - Match the **whole** hyphenated run when rejoining syllables, or "hal-le-lu-jah"
   becomes "halle-lujah". Keep an exceptions set so "Christ-like" survives.
 
+## Pasted text as a second input
+
+- A PDF viewer's "select all and copy" produces **chord lines above lyric
+  lines, `[Verse 1]` headings and `1. Title (Key)` numbering** — the same
+  structure the PDF path recovers from geometry. So a paste adapter only has to
+  emit the same `Line` records and everything downstream is shared for free.
+  `js/text-input.js` is 100 lines because of this.
+- Assert the equivalence in a test (`songsFromText(paste)` deepEqual
+  `songsFromPdf(file)`), or the two inputs will silently drift apart.
+- Without numbering there is no reliable title signal, so **only** treat the
+  first line as a title when a blank line or a section heading follows it.
+  Guessing costs you a real lyric line; not guessing costs you a filename.
+- A paste out of a PDF carries **non-breaking spaces** where chord padding was.
+  Normalise them or they survive into the lyrics as odd characters.
+- Anything that separates blocks with a blank line becomes **a slide** on
+  import. That rules out title banners and footers inside the text — the same
+  trap `plaintext.js` documents. A multi-song "copy all" cannot be both
+  import-clean and self-labelling; pick one and say which.
+
 ## ProPresenter `.pro` files
 
 - ProPresenter **7 and later (17, 18, 19, 21) are protobuf**, not the XML of

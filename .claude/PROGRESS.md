@@ -21,6 +21,8 @@ Live: https://charlesverdad.github.io/lyric-parser/
 - [x] Code-review findings from `/codex:review` and the code-reviewer agent
       all addressed
 - [x] Merged to main; Pages deployed
+- [x] PR #9 — paste lyrics as a second input, and copy import-ready text as an
+      output; 114 tests, with one asserting paste and PDF parse identically
 
 ## Verified on the deployed site
 
