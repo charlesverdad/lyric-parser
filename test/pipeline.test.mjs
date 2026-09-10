@@ -2,30 +2,47 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { songsFromPdf, songsFromText, toProFile, toTextFile } from '../js/pipeline.js';
 import { songToText } from '../js/plaintext.js';
+import { BLANK_GROUP_NAME } from '../js/reflow.js';
 import { sampleDocument, samplePaste, decodeProto, sub, str, fakeUuids } from './helpers.mjs';
 
 const CUES = 13;
 
 test('converts the sample PDF end to end', async () => {
+  // Each count includes the leading blank section and its one empty slide.
   const songs = await songsFromPdf(await sampleDocument());
 
   assert.deepEqual(
     songs.map((s) => [s.title, s.groups.length, s.groups.reduce((n, g) => n + g.slides.length, 0)]),
     [
-      ['Yours Alone', 5, 20],
-      ['Good and Gracious King', 8, 21],
-      ['More Like Jesus', 8, 26],
-      ['No Longer Slaves', 8, 17],
-      ['No Longer Slaves', 8, 17],
-      ['I Offer My Life', 2, 7],
+      ['Yours Alone', 6, 21],
+      ['Good and Gracious King', 9, 22],
+      ['More Like Jesus', 9, 27],
+      ['No Longer Slaves', 9, 18],
+      ['No Longer Slaves', 9, 18],
+      ['I Offer My Life', 3, 8],
     ],
   );
+});
+
+test('every song opens on a blank slide, and can be told not to', async () => {
+  const doc = await sampleDocument();
+
+  for (const song of await songsFromPdf(doc)) {
+    const [first] = song.groups;
+    assert.equal(first.name, BLANK_GROUP_NAME, `${song.title} does not open blank`);
+    assert.deepEqual(first.slides, [[]], `${song.title}'s blank slide has words on it`);
+    assert.equal(song.arrangement[0], BLANK_GROUP_NAME, `${song.title} does not cue it first`);
+  }
+
+  for (const song of await songsFromPdf(doc, { blankFirstSlide: false })) {
+    assert.notEqual(song.groups[0].name, BLANK_GROUP_NAME, `${song.title} still opens blank`);
+  }
 });
 
 test('no slide exceeds the configured line and character limits', async () => {
   const songs = await songsFromPdf(await sampleDocument(), { maxLines: 2, maxChars: 40 });
   for (const song of songs) {
-    for (const group of song.groups) {
+    for (const group of song.groups.filter((g) => !g.blank)) {
       for (const slide of group.slides) {
         assert.ok(slide.length <= 2, `${song.title}/${group.name}: ${slide.length} lines`);
         for (const line of slide) {
@@ -74,11 +91,12 @@ test('every song renders to a .pro whose cue count matches its slides', async ()
   }
 });
 
-test('every song renders to text with a heading per section', async () => {
+test('every song renders to text under its own title, with a heading per section', async () => {
   const songs = await songsFromPdf(await sampleDocument());
   for (const song of songs) {
     const { name, text } = toTextFile(song);
     assert.match(name, /\.txt$/);
+    assert.ok(text.startsWith(`${song.title}\n\n`), `${song.title} does not lead with its title`);
     for (const group of song.groups) {
       assert.ok(text.includes(`[${group.name}]`), `${song.title} missing [${group.name}]`);
     }
