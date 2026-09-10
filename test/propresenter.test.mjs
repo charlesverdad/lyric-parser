@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildPresentation, proFileName, groupColor } from '../js/propresenter.js';
-import { songToText, textFileName } from '../js/plaintext.js';
+import { songToText, parseSongText, textFileName } from '../js/plaintext.js';
 import { uniqueNames } from '../js/pipeline.js';
 import { decodeProto, sub, str, fakeUuids } from './helpers.mjs';
 
@@ -78,12 +78,13 @@ test('the arrangement references groups in play order, repeats included', () => 
   assert.deepEqual(order, [groupUuids[0], groupUuids[1], groupUuids[0]]);
 });
 
-test('the selected arrangement points at the arrangement it wrote', () => {
+test('no arrangement is pre-selected, so the title carries no "[ Default ]"', () => {
+  // ProPresenter appends the *selected* arrangement's name to the presentation
+  // wherever it is shown, and that suffix cannot be renamed away because it is
+  // not part of the name. The arrangement itself still has to be there.
   const doc = build();
-  assert.equal(
-    str(sub(doc, F.selectedArrangement), 1),
-    str(sub(sub(doc, F.arrangements), 1), 1),
-  );
+  assert.equal(doc[F.selectedArrangement], undefined, 'nothing should be pre-selected');
+  assert.equal(doc[F.arrangements].length, 1, 'the arrangement is still written');
 });
 
 test('each slide carries its lyrics as RTF', () => {
@@ -168,11 +169,13 @@ test('is byte-reproducible given fixed uuids and time', () => {
   assert.deepEqual([...a], [...b]);
 });
 
-test('builds file names safe for any filesystem', () => {
-  assert.equal(proFileName(SONG), 'Yours Alone (G).pro');
-  assert.equal(proFileName({ title: 'A/B: C?', key: null }), 'A-B- C-.pro');
+test('builds file names safe for any filesystem, and free of the key', () => {
+  // The key is deliberately absent: a .txt import takes its presentation name
+  // from the filename, so "(G)" here reappears in the title.
+  assert.equal(proFileName(SONG), 'Yours Alone.pro');
+  assert.equal(proFileName({ title: 'A/B: C?', key: 'G' }), 'A-B- C-.pro');
   assert.equal(proFileName({ title: '', key: null }), 'Untitled.pro');
-  assert.equal(textFileName(SONG), 'Yours Alone (G).txt');
+  assert.equal(textFileName(SONG), 'Yours Alone.txt');
 });
 
 test('plain-text export separates slides by a blank line under a group heading', () => {
@@ -181,13 +184,74 @@ test('plain-text export separates slides by a blank line under a group heading',
   assert.match(text, /\[Chorus 1\]\nWe are Yours alone/);
 });
 
-test('plain-text export writes nothing that would import as a stray slide', () => {
-  // A title banner or arrangement footer is separated by a blank line, so
-  // ProPresenter would import it as an extra slide of "lyrics".
+test('plain-text export opens on the song title, then the first section', () => {
+  const text = songToText(SONG);
+  assert.ok(text.startsWith('Yours Alone\n\n[Verse 1]\n'), `unexpected opening: ${text.slice(0, 40)}`);
+  assert.ok(!text.includes('(G)'), 'the key does not belong on a projected line');
+});
+
+test('plain-text export writes no metadata that would import as a stray slide', () => {
+  // An arrangement footer is separated by a blank line, so ProPresenter would
+  // import it as an extra slide of "lyrics". The title line is the one piece
+  // of metadata worth that cost, because a paste has no filename to carry it.
   const text = songToText(SONG);
   assert.ok(!text.includes('Arrangement:'), 'arrangement footer would be a slide');
   assert.ok(!text.includes('Key:'), 'key header would be a slide');
-  assert.ok(text.startsWith('[Verse 1]'), `unexpected leading block: ${text.slice(0, 40)}`);
+});
+
+test('the leading blank slide survives the round trip through text', () => {
+  const song = {
+    ...SONG,
+    groups: [{ name: 'Blank', blank: true, slides: [[]] }, ...SONG.groups],
+    arrangement: ['Blank', ...SONG.arrangement],
+  };
+  const text = songToText(song);
+  assert.ok(text.includes('[Blank]\n\n[Verse 1]'), `blank heading missing: ${text.slice(0, 60)}`);
+
+  const back = parseSongText(text);
+  assert.equal(back.title, 'Yours Alone');
+  assert.deepEqual(back.groups[0], { name: 'Blank', blank: true, slides: [[]] });
+  assert.deepEqual(back.groups.map((g) => g.name), ['Blank', 'Verse 1', 'Chorus 1']);
+});
+
+test('the blank slide is the one empty slide that is exported', () => {
+  const doc = build({
+    ...SONG,
+    groups: [{ name: 'Blank', blank: true, slides: [[]] }, SONG.groups[0]],
+    arrangement: ['Blank', 'Verse 1'],
+  });
+  assert.equal(doc[F.cueGroups].length, 2);
+  assert.equal(str(sub(sub(doc, F.cueGroups, 0), 1), 2), 'Blank');
+  assert.equal(doc[F.cues].length, 3, 'the blank cue plus the two verse slides');
+});
+
+test('a song read back out of text keeps the slide breaks that were typed', () => {
+  const back = parseSongText([
+    'Yours Alone',
+    '',
+    '[Verse 1]',
+    'Oh, what a love is this',
+    '',
+    'That rescues and forgives?',
+    'You suffered in our place',
+  ].join('\n'));
+
+  assert.deepEqual(back.groups, [{
+    name: 'Verse 1',
+    slides: [
+      ['Oh, what a love is this'],
+      ['That rescues and forgives?', 'You suffered in our place'],
+    ],
+  }]);
+});
+
+test('text with no heading keeps its lyrics rather than dropping them', () => {
+  const back = parseSongText('Oh, what a love is this\nThat rescues and forgives?');
+  assert.equal(back.title, null);
+  assert.deepEqual(back.groups, [{
+    name: 'Verse 1',
+    slides: [['Oh, what a love is this', 'That rescues and forgives?']],
+  }]);
 });
 
 test('numbers colliding filenames instead of overwriting', () => {

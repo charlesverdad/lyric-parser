@@ -81,6 +81,35 @@ Notes worth carrying into similar work. Concise on purpose.
 - RTF is the **Cocoa dialect**: `\fs` in half-points, `\uN?` with *signed*
   UTF-16 units, and backslash-newline for an in-paragraph line break.
 
+## ProPresenter, from the operator's side
+
+- A selected arrangement's name is **appended to the presentation title**
+  wherever ProPresenter shows it — "Yours Alone [ Default ]" — and cannot be
+  renamed away, because it is not part of the name. Write the arrangement but
+  leave `selected_arrangement` unset.
+- **Nothing derived from a title may carry the key.** A `.txt` import takes the
+  presentation name from the *filename*, so `(G)` in a filename is `(G)` in a
+  title by another route, and a title line one keystroke from being projected.
+  The key belongs in `music_key`.
+- An empty slide is normally noise to be dropped, but a **deliberate** blank
+  opening slide is a real slide with no text. Model the intent (a flag on the
+  group) rather than the shape, or every "drop the empties" filter eats it.
+
+## Editing UIs over parsed data
+
+- Make a card `draggable` only **while its handle is held**. A permanently
+  draggable card swallows text selection in its own textarea.
+- HTML5 drop targets nest: a card inside a section container. The card's `drop`
+  handler must `stopPropagation`, or the container also fires and the slide
+  lands at the end instead of where it was released.
+- A drop position is an index into the list **before** the dragged item is
+  removed. Moving down within one list therefore has to step back over the hole.
+- Editing structured data as text needs a **forgiving inverse**: text with the
+  heading deleted must keep its lyrics as an unnamed section, never drop them.
+- Keep collapse/tab/mode state **outside** the data, keyed by index, and clear
+  it whenever the data is re-derived — otherwise a re-parse leaves folds
+  pointing at songs that no longer exist.
+
 ## Browser / GitHub Pages
 
 - **A Worker can never be constructed cross-origin.** pdf.js works around this by

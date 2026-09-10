@@ -16,6 +16,7 @@
 
 import { Writer, encode } from './protobuf.js';
 import { slideRtf } from './rtf.js';
+import { songFileStem } from './filenames.js';
 
 // ── enum values ──────────────────────────────────────────────────────────────
 const APPLICATION_PROPRESENTER = 1;
@@ -67,6 +68,7 @@ const GROUP_COLORS = {
   refrain: { red: 0.85, green: 0.26, blue: 0.24 },
   vamp: { red: 0.2, green: 0.66, blue: 0.44 },
   repeat: { red: 0.2, green: 0.66, blue: 0.44 },
+  blank: { red: 0.35, green: 0.35, blue: 0.35 },
 };
 
 const FALLBACK_COLOR = { red: 0.4, green: 0.4, blue: 0.4 };
@@ -250,8 +252,10 @@ export function buildPresentation(song, options = {}) {
   const groups = song.groups
     .map((group) => {
       const groupUuid = uuid();
+      // The leading blank section is the one place an empty slide is the
+      // point, so it is exempt from both the slide and the group filter.
       const cues = group.slides
-        .filter((lines) => lines.some((line) => line.trim() !== ''))
+        .filter((lines) => group.blank || lines.some((line) => line.trim() !== ''))
         .map((lines) => ({ uuid: uuid(), lines, label: group.name }));
       return { ...group, groupUuid, cues };
     })
@@ -284,7 +288,12 @@ export function buildPresentation(song, options = {}) {
       bg.bool(3, false);
     });
 
-    w.message(10, uuidMsg(arrangementUuid)); // selected_arrangement
+    // `selected_arrangement` is deliberately not written. ProPresenter appends
+    // the *selected* arrangement's name to the presentation everywhere it is
+    // shown - "Yours Alone [ Default ]" - and there is no way to rename that
+    // suffix away, because it is not part of the name. Leaving the selection
+    // empty shows the title alone; the arrangement below is still in the
+    // document and can be picked from the arrangement menu when it is wanted.
     w.message(11, (arr) => {
       arr.message(1, uuidMsg(arrangementUuid));
       arr.string(2, 'Default');
@@ -332,12 +341,4 @@ export function buildPresentation(song, options = {}) {
 }
 
 /** A filesystem-safe name for a song's `.pro` file. */
-export function proFileName(song) {
-  const base = [song.title, song.key ? `(${song.key})` : null]
-    .filter(Boolean)
-    .join(' ')
-    .replace(/[/\\:*?"<>|]/g, '-')
-    .replace(/\s+/g, ' ')
-    .trim();
-  return `${base || 'Untitled'}.pro`;
-}
+export const proFileName = (song) => `${songFileStem(song)}.pro`;

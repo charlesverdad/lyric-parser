@@ -18,6 +18,25 @@ export const DEFAULT_MAX_CHARS = 40;
 export const DEFAULT_MAX_LINES = 2;
 
 /**
+ * The section holding the empty slide every song opens on.
+ *
+ * An operator cues a song before the first word is sung, and landing straight
+ * on "Oh, what a love is this" puts the lyrics up early. A blank slide in
+ * front gives the cue somewhere to sit. It is a real slide with no text rather
+ * than an absence, so both exports have to be told to keep it: everywhere else
+ * an empty slide means "someone cleared this, drop it".
+ */
+export const BLANK_GROUP_NAME = 'Blank';
+
+/** A fresh leading-blank section. */
+export const blankGroup = () => ({
+  name: BLANK_GROUP_NAME,
+  blank: true,
+  lines: [],
+  slides: [[]],
+});
+
+/**
  * Break `text` into `parts` pieces at word boundaries, as evenly as possible.
  *
  * Evenness matters visually: splitting "Lifting my praise to You as a pleasing
@@ -137,16 +156,26 @@ export function toSlides(lines, options = {}) {
 /**
  * Lay out every group of a song.
  *
+ * Unless `blankFirstSlide` is turned off, the song gains a leading blank
+ * section — see `BLANK_GROUP_NAME`. A song with no lyrics at all does not: a
+ * document holding nothing but an empty slide is not worth writing.
+ *
  * @param {import('./song-parser.js').Song} song
- * @param {object} [options]
+ * @param {{maxLines?: number, maxChars?: number, blankFirstSlide?: boolean}} [options]
  * @returns {import('./song-parser.js').Song & {groups: {name: string, slides: string[][]}[]}}
  */
 export function layoutSong(song, options = {}) {
+  const groups = song.groups.map((group) => ({
+    ...group,
+    slides: toSlides(group.lines, options),
+  }));
+
+  if ((options.blankFirstSlide ?? true) === false || groups.length === 0) {
+    return { ...song, groups };
+  }
   return {
     ...song,
-    groups: song.groups.map((group) => ({
-      ...group,
-      slides: toSlides(group.lines, options),
-    })),
+    groups: [blankGroup(), ...groups],
+    arrangement: [BLANK_GROUP_NAME, ...song.arrangement],
   };
 }

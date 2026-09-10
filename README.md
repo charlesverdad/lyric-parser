@@ -35,11 +35,14 @@ or download it as a `.pro` file.
 - **Keeps the structure.** Verse, Chorus and Bridge become ProPresenter groups
   in their usual colours, with an arrangement that plays them back in printed
   order — repeats (`x2`, `x5`) included.
-- **Everything is editable** before you export: type into any slide, add or
-  remove slides with the controls on each card, and every judgement call the
-  parser made is listed above the results. Clearing a slide leaves a
-  placeholder you can type back into; removing one takes it away, and a section
-  left with no slides drops out of both exports.
+- **Everything is editable** before you export: type into any slide, drag
+  slides between sections, fold a song or a section away, tab between songs,
+  or switch a whole song to text and put the slide breaks exactly where you
+  want them. Every judgement call the parser made is listed above the results.
+  Clearing a slide leaves a placeholder you can type back into; removing one
+  takes it away, and a section left with no slides drops out of both exports.
+- **Every song opens on a blank slide**, so it can be cued before the first
+  line goes up. Turn it off in the toolbar if you would rather it did not.
 
 ## Two ways in
 
@@ -58,14 +61,23 @@ into lyrics keeps every line.
 
 Two forms, both from the same laid-out songs:
 
-**Import-ready text**, shown next to each song and copied with one click. A
-blank line starts a new slide and `[Chorus 1]` names a group, which is what
-ProPresenter's text import expects — so it can go straight in with no file
-involved.
+**Import-ready text**, shown next to each song and copied with one click. The
+song's title leads, then a blank line starts a new slide and `[Chorus 1]` names
+a group, which is what ProPresenter's text import expects — so it can go
+straight in with no file involved. The same shape reads back in, which is what
+the editor's text mode is: a blank line you type *is* a slide break.
+
+No key appears in a title or a filename. It is the band's business, not the
+screen's, and a `.txt` import takes its presentation name from the filename —
+so a `(G)` there ends up projected. The key travels in the `.pro`'s `music_key`
+field instead.
 
 **A `.pro` document.** — including 18 and 21 — stores `.pro` documents as protocol buffers. This
 writes that format directly, with no protobuf runtime shipped to the browser.
-It carries the group colours and the arrangement, which plain text cannot.
+It carries the group colours, the blank opening slide and the arrangement,
+which plain text cannot. No arrangement is *selected*, because ProPresenter
+appends the selected arrangement's name to the presentation everywhere it is
+shown — the "[ Default ]" that cannot be renamed away.
 
 Field definitions are the reverse-engineered ones from
 [greyshirtguy/ProPresenter7-Proto](https://github.com/greyshirtguy/ProPresenter7-Proto),
@@ -88,7 +100,8 @@ js/
   propresenter.js   the .pro document
   protobuf.js       minimal wire-format writer
   rtf.js            slide text
-  plaintext.js      .txt export
+  plaintext.js      .txt export, and reading it back
+  filenames.js      export filenames
 proto/              vendored ProPresenter definitions (for validation)
 tools/              CLI conversion and debugging aids
 test/               unit tests, run with node --test
