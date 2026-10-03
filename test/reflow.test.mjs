@@ -96,3 +96,20 @@ test('a zero character limit still terminates', () => {
   const slides = toSlides(['one two three'], { maxLines: 2, maxChars: 0 });
   assert.ok(slides.flat().length > 0);
 });
+
+test('drops a trailing comma from every projected line by default', () => {
+  assert.deepEqual(toSlides(['Oh, what a love is this,', 'That rescues and forgives'], {}), [
+    ['Oh, what a love is this', 'That rescues and forgives'],
+  ]);
+  // A wrapped piece is a projected line too.
+  assert.deepEqual(
+    toSlides(['Holy, holy, holy, Lord God Almighty,,'], { maxChars: 20 }),
+    [['Holy, holy, holy', 'Lord God Almighty']],
+  );
+});
+
+test('trailing commas can be kept', () => {
+  assert.deepEqual(toSlides(['Oh, what a love is this,'], { dropTrailingCommas: false }), [
+    ['Oh, what a love is this,'],
+  ]);
+});
