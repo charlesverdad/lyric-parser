@@ -157,3 +157,20 @@ Notes worth carrying into similar work. Concise on purpose.
   system Chrome, gives a headless smoke test with no browser download: paste
   the fixture, switch songs, catch the `.pro`/`.zip` download events, check
   phone width for `scrollWidth` overflow, and fail on `pageerror`.
+
+## Per-parse URLs and local history
+
+- GitHub Pages has no rewrites: `<base>/<uuid>` works by deploying a copy of
+  `index.html` as `404.html`. It is served with a 404 status, so expect two
+  "Failed to load resource: 404" console lines on a deep link; that is not a
+  bug. Keep every asset path relative and the id a single path segment.
+  `serve -s` mimics this locally, but only a test against the live site proves it.
+- Debounced saves need flushing on **every** way of leaving a parse (Recent
+  click, back/forward, New, brand, pagehide), and the pending timer must be
+  cancelled before `currentId` changes. Otherwise it saves the *next* parse.
+- Unapplied Text-mode drafts are state too: snapshot and restore them as
+  drafts, not auto-applied.
+- Validate stored entries structurally on read. A shallow check lets a stale
+  schema crash render.
+- A test that corrupts localStorage must do it from the menu screen, because
+  the `pagehide` flush rewrites the entry when you navigate away from results.
