@@ -317,6 +317,7 @@ function showScreen(which) {
   dom.results.hidden = !results;
   dom.topActions.hidden = !results;
   dom.totals.hidden = !results;
+  document.body.classList.toggle('on-results', results);
   if (results) dom.main.scrollTop = 0;
 }
 
@@ -546,7 +547,10 @@ function renderTextEditor() {
   area.spellcheck = false;
   area.setAttribute('aria-label', `${songs[active].title} as text`);
   area.value = drafts.get(active) ?? songToText(songs[active]);
-  area.addEventListener('input', () => drafts.set(active, area.value));
+  area.addEventListener('input', () => {
+    drafts.set(active, area.value);
+    scheduleSave();
+  });
 
   const actions = document.createElement('div');
   actions.className = 'text-actions';
@@ -1226,6 +1230,10 @@ const snapshot = () => ({
   createdAt: currentCreated,
   updatedAt: Date.now(),
   sourceName, parsed, songs, settings: { ...settings }, edited,
+  // Typed-but-unapplied Text-mode boxes stay drafts across a restore.
+  drafts: [...drafts],
+  textMode: [...textMode],
+  active,
 });
 
 function saveNow() {
@@ -1259,6 +1267,22 @@ function openEntry(entry) {
   if (!entry || !Array.isArray(entry.parsed) || !Array.isArray(entry.songs) || !entry.songs.length) {
     return false;
   }
+  // Whatever is on show is saved before it is replaced, and any pending
+  // debounce is cancelled so it cannot save the wrong parse afterwards.
+  if (currentId) saveNow();
+  try {
+    return restoreEntry(entry);
+  } catch (error) {
+    console.error(error);
+    currentId = null;
+    parsed = [];
+    songs = [];
+    resetView();
+    return false;
+  }
+}
+
+function restoreEntry(entry) {
   parsed = entry.parsed;
   songs = entry.songs;
   Object.assign(settings, entry.settings ?? {});
@@ -1267,6 +1291,15 @@ function openEntry(entry) {
   currentId = entry.id;
   currentCreated = entry.createdAt ?? Date.now();
   resetView();
+  if (Array.isArray(entry.drafts)) {
+    for (const [index, text] of entry.drafts) {
+      if (songs[index] && typeof text === 'string') drafts.set(index, text);
+    }
+  }
+  if (Array.isArray(entry.textMode)) {
+    for (const index of entry.textMode) if (songs[index]) textMode.add(index);
+  }
+  if (Number.isInteger(entry.active) && songs[entry.active]) active = entry.active;
   closeDrawer();
   syncDrawer();
   setStatus('');
@@ -1280,9 +1313,7 @@ function openEntry(entry) {
  * Text-mode box but not applied), so nothing is lost by going home.
  */
 function goHome({ push = false } = {}) {
-  for (const [index, text] of drafts) {
-    if (songs[index] && text !== songToText(songs[index])) applyText(index, text, { redraw: false });
-  }
+  // Unapplied drafts are saved as drafts, not applied: the user can still Apply or Revert.
   saveNow();
   currentId = null;
   parsed = [];
@@ -1307,9 +1338,11 @@ function route() {
   if (currentId) saveNow();
   if (!openEntry(store.get(id))) {
     goHome();
-    setStatus("That parse isn't in this browser's history. It may have been removed or expired.");
+    setStatus(NOT_FOUND);
   }
 }
+
+const NOT_FOUND = "That parse isn't in this browser's history. It may have been removed or expired.";
 
 function renderRecent() {
   const entries = store.list();
@@ -1331,8 +1364,12 @@ function renderRecent() {
       // Let the browser handle open-in-new-tab and friends.
       if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
       event.preventDefault();
-      if (openEntry(store.get(entry.id))) window.history.pushState(null, '', BASE + entry.id);
-      else renderRecent();
+      if (openEntry(store.get(entry.id))) {
+        window.history.pushState(null, '', BASE + entry.id);
+      } else {
+        goHome();
+        setStatus(NOT_FOUND);
+      }
     });
     const remove = document.createElement('button');
     remove.type = 'button';

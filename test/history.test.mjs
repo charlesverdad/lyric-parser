@@ -101,7 +101,7 @@ test('remove deletes one entry only', () => {
 
 test('list returns summaries without the heavy state', () => {
   const h = createHistory({ storage: memory() });
-  h.save(entry(1, { songs: [{ a: 1 }] }));
+  h.save(entry(1, { songs: [{ title: 'T', warnings: [], arrangement: [], groups: [] }] }));
   assert.equal('songs' in h.list()[0], false);
   assert.ok(h.get(id(1)).songs);
 });
@@ -129,4 +129,25 @@ test('formatWhen gives short relative dates', () => {
   assert.equal(formatWhen(now - 3 * 3_600_000, now), '3 h ago');
   assert.equal(formatWhen(now - 30 * 3_600_000, now), 'Yesterday');
   assert.match(formatWhen(now - 10 * 86_400_000, now), /^\d{1,2} \w{3}$/);
+});
+
+test('drops entries whose songs would crash the results screen', () => {
+  const good = { title: 'T', warnings: [], arrangement: ['V'], groups: [{ name: 'V', slides: [['a']] }] };
+  const storage = memory();
+  const h = createHistory({ storage });
+  h.save(entry(1, { songs: [good], parsed: [{ groups: [] }] }));
+  assert.equal(h.list().length, 1);
+  const bad = [
+    { ...good, groups: 'Chorus' },
+    { ...good, groups: [{ name: 'V', slides: 'x' }] },
+    { ...good, groups: [{ name: 'V', slides: [[1]] }] },
+    { ...good, warnings: undefined },
+  ];
+  for (const song of bad) {
+    storage.data.set(HISTORY_KEY, JSON.stringify([entry(2, { songs: [song] })]));
+    assert.deepEqual(h.list(), []);
+    assert.equal(h.get(id(2)), null);
+  }
+  storage.data.set(HISTORY_KEY, JSON.stringify([entry(3, { songs: 'nope' })]));
+  assert.deepEqual(h.list(), []);
 });

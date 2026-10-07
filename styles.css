@@ -504,7 +504,8 @@ select.field { padding: 0 8px; }
   .shortcut { display: none; }
 }
 @media (max-width: 480px) {
-  .brand-name { display: none; }
+  /* The results screen needs the room for its action buttons. */
+  body.on-results .brand-name { display: none; }
 }
 
 /* ── brand link ───────────────────────────────────────────────────────── */

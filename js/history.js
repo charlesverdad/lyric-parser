@@ -37,7 +37,29 @@ export function formatWhen(timestamp, now = Date.now()) {
   return new Date(timestamp).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
 }
 
-const isEntry = (e) => e && typeof e === 'object' && isId(e.id) && Number.isFinite(e.updatedAt);
+const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+const isLines = (v) => Array.isArray(v) && v.every((l) => typeof l === 'string');
+
+/** A laid-out song, in the shape the results screen reads. */
+const isSong = (song) =>
+  isObject(song)
+  && typeof song.title === 'string'
+  && Array.isArray(song.warnings)
+  && Array.isArray(song.arrangement)
+  && Array.isArray(song.groups)
+  && song.groups.every((g) => isObject(g) && typeof g.name === 'string'
+    && Array.isArray(g.slides) && g.slides.every(isLines));
+
+const isParsedSong = (song) => isObject(song) && Array.isArray(song.groups);
+
+/**
+ * Shallow-but-sufficient: restoring a malformed entry would crash the render,
+ * so anything with a bad shape is dropped when read.
+ */
+const isEntry = (e) =>
+  isObject(e) && isId(e.id) && Number.isFinite(e.updatedAt)
+  && (e.songs === undefined || (Array.isArray(e.songs) && e.songs.every(isSong)))
+  && (e.parsed === undefined || (Array.isArray(e.parsed) && e.parsed.every(isParsedSong)));
 
 /**
  * @param {{ storage?: Storage | null, key?: string, max?: number }} options
