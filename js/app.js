@@ -32,6 +32,7 @@ const dom = {
   songTabs: el('songTabs'),
   maxLines: el('maxLines'), maxChars: el('maxChars'),
   rejoinHyphens: el('rejoinHyphens'), straightQuotes: el('straightQuotes'),
+  dropTrailingCommas: el('dropTrailingCommas'),
   blankFirstSlide: el('blankFirstSlide'),
   fontFamily: el('fontFamily'), fontSize: el('fontSize'), slideSize: el('slideSize'),
   downloadAll: el('downloadAll'), reset: el('reset'),
@@ -79,6 +80,7 @@ function readSettings() {
     maxChars: clamp(Number(dom.maxChars.value), 16, 90),
     rejoinHyphens: dom.rejoinHyphens.checked,
     straightQuotes: dom.straightQuotes.checked,
+    dropTrailingCommas: dom.dropTrailingCommas.checked,
     blankFirstSlide: dom.blankFirstSlide.checked,
     fontFamily: dom.fontFamily.value.trim() || 'Arial',
     fontSize: clamp(Number(dom.fontSize.value), 12, 200),
@@ -1045,7 +1047,8 @@ dom.drop.addEventListener('drop', (event) => {
 
 // Layout settings re-split the slides; styling settings only affect export.
 for (const control of [
-  dom.maxLines, dom.maxChars, dom.rejoinHyphens, dom.straightQuotes, dom.blankFirstSlide,
+  dom.maxLines, dom.maxChars, dom.rejoinHyphens, dom.straightQuotes, dom.dropTrailingCommas,
+  dom.blankFirstSlide,
 ]) {
   control.addEventListener('change', onSettingChanged);
 }

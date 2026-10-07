@@ -112,10 +112,20 @@ export function wrapLine(text, maxChars = DEFAULT_MAX_CHARS) {
 }
 
 /**
+ * A comma at the end of a projected line is punctuation for the reader of a
+ * chord chart, not the congregation: the line break already does its job, and
+ * a column of dangling commas down the slide looks like a typo.
+ */
+const TRAILING_COMMA_RE = /\s*,+$/;
+
+/**
  * Lay a group's lyric lines out into slides.
  *
+ * Unless `dropTrailingCommas` is turned off, every projected line - a wrapped
+ * piece included - loses a trailing comma.
+ *
  * @param {string[]} lines
- * @param {{maxLines?: number, maxChars?: number}} [options]
+ * @param {{maxLines?: number, maxChars?: number, dropTrailingCommas?: boolean}} [options]
  * @returns {string[][]} slides, each an array of projected lines
  */
 export function toSlides(lines, options = {}) {
@@ -123,11 +133,13 @@ export function toSlides(lines, options = {}) {
   // below advance by zero and spin forever.
   const maxLines = Math.max(1, Math.floor(options.maxLines ?? DEFAULT_MAX_LINES));
   const maxChars = Math.max(1, Math.floor(options.maxChars ?? DEFAULT_MAX_CHARS));
+  const dropCommas = options.dropTrailingCommas ?? true;
 
   // A source line becomes one unit; wrapping keeps its pieces together so a
   // sentence is never split across a slide boundary.
   const units = lines
     .map((line) => wrapLine(line, maxChars))
+    .map((unit) => (dropCommas ? unit.map((l) => l.replace(TRAILING_COMMA_RE, '')) : unit))
     .filter((unit) => unit.length > 0 && unit.some((l) => l !== ''));
 
   const slides = [];
@@ -161,7 +173,7 @@ export function toSlides(lines, options = {}) {
  * document holding nothing but an empty slide is not worth writing.
  *
  * @param {import('./song-parser.js').Song} song
- * @param {{maxLines?: number, maxChars?: number, blankFirstSlide?: boolean}} [options]
+ * @param {{maxLines?: number, maxChars?: number, blankFirstSlide?: boolean, dropTrailingCommas?: boolean}} [options]
  * @returns {import('./song-parser.js').Song & {groups: {name: string, slides: string[][]}[]}}
  */
 export function layoutSong(song, options = {}) {

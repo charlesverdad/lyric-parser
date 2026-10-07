@@ -30,8 +30,9 @@ or download it as a `.pro` file.
   grammar is strict, so `All`, `And`, `Grace` and `Christ` stay in the lyrics
   while `F#m7b5`, `Esus`, `N.C.` and `C|C|D|G/B|` go.
 - **Rebuilds the lines.** Syllable breaks are rejoined, chord-alignment padding
-  collapses, and over-long lines split into two balanced halves that stay
-  together on one slide.
+  collapses, a comma left dangling at the end of a line is dropped (untick
+  *Drop trailing commas* to keep it), and over-long lines split into two
+  balanced halves that stay together on one slide.
 - **Keeps the structure.** Verse, Chorus and Bridge become ProPresenter groups
   in their usual colours, with an arrangement that plays them back in printed
   order — repeats (`x2`, `x5`) included.
