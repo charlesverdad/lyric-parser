@@ -6,7 +6,10 @@ Drop in a song sheet — the two-column, chords-above-lyrics kind a worship team
 prints — or just paste the lyrics in, and get back one ProPresenter document
 per song, with the chords stripped, the section headings kept, and the lyrics
 re-laid-out two lines to a slide. Copy the result straight into ProPresenter,
-or download it as a `.pro` file.
+or download it as a `.pro` file. It works with
+[FreeShow](https://freeshow.app/) too: copy a song's text and paste it into the
+lyrics box when creating a new show, and the `[Section]` headings and blank-line
+slide breaks carry over.
 
 **[Open Lyric Parser](https://charlesverdad.github.io/lyric-parser/)**
 

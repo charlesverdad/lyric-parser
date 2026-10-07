@@ -3,8 +3,17 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Lyric Parser — chord charts to ProPresenter</title>
-<meta name="description" content="Turn a PDF chord chart or pasted lyrics into ProPresenter song files. Strips chords, keeps section headings, two lines per slide. Runs entirely in your browser.">
+<title>Lyric Parser — chord charts to ProPresenter and FreeShow</title>
+<meta name="description" content="Turn a PDF chord chart or pasted lyrics into ProPresenter song files (.pro) or plain text for FreeShow. Chords stripped, section headings kept, two lines per slide. Runs entirely in your browser.">
+<link rel="canonical" href="https://charlesverdad.github.io/lyric-parser/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Lyric Parser">
+<meta property="og:title" content="Lyric Parser — chord charts to ProPresenter and FreeShow">
+<meta property="og:description" content="Turn a PDF chord chart or pasted lyrics into ProPresenter song files (.pro) or plain text for FreeShow. Chords stripped, section headings kept, two lines per slide. Runs entirely in your browser.">
+<meta property="og:url" content="https://charlesverdad.github.io/lyric-parser/">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="Lyric Parser — chord charts to ProPresenter and FreeShow">
+<meta name="twitter:description" content="Turn a PDF chord chart or pasted lyrics into ProPresenter song files (.pro) or plain text for FreeShow. Chords stripped, section headings kept, two lines per slide. Runs entirely in your browser.">
 <!-- connect-src must include the CDN: a cross-origin worker cannot be
      constructed directly, so pdf.js fetches its worker script and runs it
      from a blob URL. Without that fetch pdf.js silently falls back to
@@ -12,14 +21,80 @@
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://cdnjs.cloudflare.com; worker-src 'self' blob:; object-src 'none'; base-uri 'self'">
 <link rel="stylesheet" href="styles.css">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='28' fill='black'/><circle cx='50' cy='50' r='20' fill='none' stroke='white' stroke-width='9'/></svg>">
+<script type="application/ld+json">
+[
+  {
+    "@context": "https://schema.org",
+    "@type": "WebApplication",
+    "name": "Lyric Parser",
+    "url": "https://charlesverdad.github.io/lyric-parser/",
+    "description": "Turn a PDF chord chart or pasted lyrics into ProPresenter song files (.pro) or plain text for FreeShow. Chords stripped, section headings kept, two lines per slide. Runs entirely in your browser.",
+    "applicationCategory": "MultimediaApplication",
+    "operatingSystem": "Any (web browser)",
+    "offers": {
+      "@type": "Offer",
+      "price": "0",
+      "priceCurrency": "USD"
+    }
+  },
+  {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    "mainEntity": [
+      {
+        "@type": "Question",
+        "name": "How do I import the .pro files into ProPresenter (7 and later)?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Unzip the download if you got a .zip, then in ProPresenter choose File > Import and pick the .pro file, or drag the .pro file onto your Library. The song arrives with its sections and play order already set up."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "How do I use the .txt or \"Copy text\" output with ProPresenter's text import?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Save the .txt (or use Copy text and save it as a .txt file), then choose File > Import in ProPresenter and pick it. ProPresenter's text import has a delimiter setting that decides where one slide ends; set it so a blank line starts a new slide, which is how this output is laid out. ProPresenter names the presentation after the file, so name the file after the song."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "Does it work with FreeShow?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Yes. Copy the song's text (Copy text, or the .txt), then in FreeShow create a new show (Shows, then New show) and paste it into the lyrics / Quick lyrics text box before pressing New show. The [Section] headings become groups and a blank line starts a new slide. FreeShow can also import ProPresenter files from File > Import, but text is the route we recommend."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "Is my PDF uploaded anywhere?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "No. Everything runs in your browser; the PDF is read on your device and never sent to a server. The Recent list is stored only in this browser (localStorage), holds the lyrics and your edits but not the PDF, and you can remove any entry with its x button."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "Which PDFs work?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "PDFs with a real text layer, such as chord charts exported from a word processor or song-planning app. Scanned pages and photos have no text to read, so they will not work. If you can select text in the PDF, it should. Otherwise, select all, copy, and use Paste lyrics."
+        }
+      }
+    ]
+  }
+]
+</script>
 </head>
 <body>
 <div class="app">
 
   <header class="topbar">
     <div class="brand">
+    <a class="brand-link" id="brand" href="./" aria-label="Lyric Parser, back to the main menu">
       <span class="logo" aria-hidden="true"><span class="logo-dot"></span></span>
       <span class="brand-name">Lyric Parser</span>
+    </a>
       <span id="totals" class="totals" hidden></span>
     </div>
     <div id="topActions" class="top-actions" hidden>
@@ -69,6 +144,35 @@
       <p id="status" class="status" role="status" aria-live="polite"></p>
 
       <div class="privacy">Everything runs in your browser. No upload, no server, no account.</div>
+
+      <section id="recent" class="recent" aria-labelledby="recentTitle" hidden>
+        <h2 id="recentTitle" class="section-label">Recent</h2>
+        <ul id="recentList" class="recent-list"></ul>
+      </section>
+
+      <section class="faq" aria-labelledby="faqTitle">
+        <h2 id="faqTitle" class="section-label">Questions</h2>
+        <details class="faq-item">
+          <summary>How do I import the .pro files into ProPresenter (7 and later)?</summary>
+          <p>Unzip the download if you got a .zip, then in ProPresenter choose File &gt; Import and pick the .pro file, or drag the .pro file onto your Library. The song arrives with its sections and play order already set up.</p>
+        </details>
+        <details class="faq-item">
+          <summary>How do I use the .txt or &quot;Copy text&quot; output with ProPresenter's text import?</summary>
+          <p>Save the .txt (or use Copy text and save it as a .txt file), then choose File &gt; Import in ProPresenter and pick it. ProPresenter's text import has a delimiter setting that decides where one slide ends; set it so a blank line starts a new slide, which is how this output is laid out. ProPresenter names the presentation after the file, so name the file after the song.</p>
+        </details>
+        <details class="faq-item">
+          <summary>Does it work with FreeShow?</summary>
+          <p>Yes. Copy the song's text (Copy text, or the .txt), then in FreeShow create a new show (Shows, then New show) and paste it into the lyrics / Quick lyrics text box before pressing New show. The [Section] headings become groups and a blank line starts a new slide. FreeShow can also import ProPresenter files from File &gt; Import, but text is the route we recommend.</p>
+        </details>
+        <details class="faq-item">
+          <summary>Is my PDF uploaded anywhere?</summary>
+          <p>No. Everything runs in your browser; the PDF is read on your device and never sent to a server. The Recent list is stored only in this browser (localStorage), holds the lyrics and your edits but not the PDF, and you can remove any entry with its x button.</p>
+        </details>
+        <details class="faq-item">
+          <summary>Which PDFs work?</summary>
+          <p>PDFs with a real text layer, such as chord charts exported from a word processor or song-planning app. Scanned pages and photos have no text to read, so they will not work. If you can select text in the PDF, it should. Otherwise, select all, copy, and use Paste lyrics.</p>
+        </details>
+      </section>
     </div>
   </div>
 
