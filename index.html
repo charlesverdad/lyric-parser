@@ -11,152 +11,146 @@
      parsing on the main thread, freezing the page on a large PDF. -->
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://cdnjs.cloudflare.com; worker-src 'self' blob:; object-src 'none'; base-uri 'self'">
 <link rel="stylesheet" href="styles.css">
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎵</text></svg>">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='28' fill='black'/><circle cx='50' cy='50' r='20' fill='none' stroke='white' stroke-width='9'/></svg>">
 </head>
 <body>
+<div class="app">
 
-<header class="masthead">
-  <div class="wrap">
-    <h1>Lyric&nbsp;Parser</h1>
-    <p class="tagline">Chord charts &rarr; ProPresenter songs. Drop a PDF or paste the lyrics; chords stripped, headings kept, two lines a slide.</p>
-    <p class="privacy">Everything runs in your browser. No upload, no server, no account.</p>
-  </div>
-</header>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo" aria-hidden="true"><span class="logo-dot"></span></span>
+      <span class="brand-name">Lyric Parser</span>
+      <span id="totals" class="totals" hidden></span>
+    </div>
+    <div id="topActions" class="top-actions" hidden>
+      <button type="button" id="copyAll" class="btn secondary only-wide">Copy all</button>
+      <button type="button" id="openSettings" class="btn secondary">Settings</button>
+      <button type="button" id="reset" class="btn secondary">New</button>
+      <button type="button" id="downloadAll" class="btn primary">Download</button>
+    </div>
+  </header>
 
-<main class="wrap">
-
-  <div class="tabs" role="tablist" aria-label="How to supply the lyrics">
-    <button type="button" role="tab" id="tabPdf" class="tab" aria-selected="true" aria-controls="panelPdf">PDF file</button>
-    <button type="button" role="tab" id="tabPaste" class="tab" aria-selected="false" aria-controls="panelPaste">Paste lyrics</button>
-  </div>
-
-  <section id="panelPdf" role="tabpanel" aria-labelledby="tabPdf">
-    <div id="drop" class="dropzone" tabindex="0" aria-label="Choose or drop a PDF song sheet">
-      <input type="file" id="file" accept="application/pdf,.pdf" hidden>
-      <div class="dropzone-inner">
-        <svg viewBox="0 0 24 24" width="44" height="44" aria-hidden="true"><path fill="currentColor" d="M12 3a1 1 0 0 1 1 1v9.59l3.3-3.3a1 1 0 1 1 1.4 1.42l-5 5a1 1 0 0 1-1.4 0l-5-5a1 1 0 1 1 1.4-1.42l3.3 3.3V4a1 1 0 0 1 1-1Z"/><path fill="currentColor" d="M4 17a1 1 0 0 1 1 1v1h14v-1a1 1 0 1 1 2 0v1a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-1a1 1 0 0 1 1-1Z"/></svg>
-        <p class="dropzone-title">Drop a PDF song sheet here</p>
-        <p class="dropzone-sub">or <button type="button" id="browse" class="linkish">choose a file</button></p>
+  <!-- ── input ─────────────────────────────────────────────────────────── -->
+  <div id="inputScreen" class="screen-input">
+    <div class="input-col">
+      <div class="intro">
+        <h1>Chord charts &rarr; ProPresenter songs</h1>
+        <p>Drop a PDF or paste the lyrics; chords stripped, headings kept, two lines a slide.</p>
       </div>
-    </div>
-  </section>
 
-  <section id="panelPaste" role="tabpanel" aria-labelledby="tabPaste" class="paste-panel" hidden>
-    <label class="paste-label" for="paste">Paste the lyrics &mdash; chords and all. Selecting everything in a PDF viewer and copying works fine.</label>
-    <textarea id="paste" class="paste-box" spellcheck="false" rows="14"
-      placeholder="1. Yours Alone (G)&#10;4/4 170 BPM&#10;[Verse 1]&#10;C          G&#10;Oh, what a love is this&#10;C              D&#10;That rescues and for-gives?"></textarea>
-    <div class="paste-actions">
-      <button type="button" id="convert" class="primary">Convert</button>
-      <button type="button" id="pasteSample" class="ghost">Use the example</button>
-      <p class="hint-line">Chord lines, <code>[Verse 1]</code> headings and <code>1. Title (Key)</code> numbering are all understood. Several songs in one paste are split apart.</p>
-    </div>
-  </section>
+      <div class="segmented wide-seg" role="tablist" aria-label="How to supply the lyrics">
+        <button type="button" role="tab" id="tabPdf" class="seg" aria-selected="true" aria-controls="panelPdf">PDF file</button>
+        <button type="button" role="tab" id="tabPaste" class="seg" aria-selected="false" aria-controls="panelPaste">Paste lyrics</button>
+      </div>
 
-  <p id="status" class="status" role="status" aria-live="polite"></p>
-
-  <section id="results" class="results" hidden>
-
-    <div class="toolbar">
-      <div class="settings">
-        <label>Lines per slide
-          <input type="number" id="maxLines" min="1" max="6" value="2">
-        </label>
-        <label>Max characters per line
-          <input type="number" id="maxChars" min="16" max="90" step="1" value="40">
-        </label>
-        <label class="check">
-          <input type="checkbox" id="rejoinHyphens" checked>
-          Rejoin split words <span class="hint" title="Chord charts break words at syllables so a chord sits over the right beat: for-gives, Re-deemed.">?</span>
-        </label>
-        <label class="check">
-          <input type="checkbox" id="straightQuotes">
-          Straighten quotes
-        </label>
-        <label class="check">
-          <input type="checkbox" id="dropTrailingCommas" checked>
-          Drop trailing commas <span class="hint" title="A comma at the end of a line is removed; the line break already does its job.">?</span>
-        </label>
-        <label class="check">
-          <input type="checkbox" id="blankFirstSlide" checked>
-          Blank slide first <span class="hint" title="Every song opens on an empty slide, so the song can be cued before the first line goes up.">?</span>
-        </label>
-        <details class="advanced">
-          <summary>Slide styling</summary>
-          <div class="advanced-body">
-            <label>Font
-              <input type="text" id="fontFamily" value="Arial">
-            </label>
-            <label>Size (pt)
-              <input type="number" id="fontSize" min="12" max="200" value="64">
-            </label>
-            <label>Slide size
-              <select id="slideSize">
-                <option value="1920x1080" selected>1920 × 1080</option>
-                <option value="1280x720">1280 × 720</option>
-                <option value="3840x2160">3840 × 2160</option>
-                <option value="1024x768">1024 × 768 (4:3)</option>
-              </select>
-            </label>
+      <section id="panelPdf" role="tabpanel" aria-labelledby="tabPdf">
+        <div id="drop" class="dropzone" tabindex="0" role="button" aria-label="Choose or drop a PDF song sheet">
+          <input type="file" id="file" accept="application/pdf,.pdf" hidden>
+          <span class="drop-icon" aria-hidden="true">&darr;</span>
+          <div class="drop-text">
+            <div class="drop-title">Drop a PDF song sheet here</div>
+            <div class="drop-sub">or click to choose a file</div>
           </div>
-        </details>
-      </div>
+          <span class="btn primary static">Select from computer</span>
+        </div>
+      </section>
 
-      <div class="actions">
-        <button type="button" id="reset" class="ghost">Start over</button>
+      <section id="panelPaste" role="tabpanel" aria-labelledby="tabPaste" class="paste-panel" hidden>
+        <textarea id="paste" class="paste-box" spellcheck="false" rows="14" aria-label="Pasted lyrics"
+          placeholder="1. Yours Alone (G)&#10;4/4 170 BPM&#10;[Verse 1]&#10;C          G&#10;Oh, what a love is this&#10;C              D&#10;That rescues and for-gives?"></textarea>
+        <div class="paste-actions">
+          <button type="button" id="convert" class="btn primary tall">Convert</button>
+          <button type="button" id="pasteSample" class="btn secondary tall">Use the example</button>
+          <span class="shortcut">&#8984; &#8629; to convert</span>
+        </div>
+        <p class="note">Chord lines, [Verse 1] headings and 1. Title (Key) numbering are all understood. Several songs in one paste are split apart.</p>
+      </section>
+
+      <p id="status" class="status" role="status" aria-live="polite"></p>
+
+      <div class="privacy">Everything runs in your browser. No upload, no server, no account.</div>
+    </div>
+  </div>
+
+  <!-- ── results ───────────────────────────────────────────────────────── -->
+  <div id="results" class="results" hidden>
+    <div id="strip" class="strip" aria-label="Songs"></div>
+    <div class="results-body">
+      <aside class="sidebar" aria-label="Songs">
+        <div class="side-head"><span class="side-title">Songs</span><span id="songCount" class="side-count"></span></div>
+        <div id="songList" class="song-list"></div>
+        <div class="side-foot"><kbd>&uarr;</kbd><kbd>&darr;</kbd><span>to switch songs</span></div>
+      </aside>
+
+      <main id="main" class="main">
+        <div class="song-head-bar">
+          <div class="song-head">
+            <div class="song-head-text">
+              <div id="position" class="position"></div>
+              <div class="title-row">
+                <h2 id="songTitle" class="song-title"></h2>
+                <span id="songKey" class="key-pill" hidden></span>
+              </div>
+              <div id="songMeta" class="song-meta"></div>
+            </div>
+            <div class="song-tools">
+              <div class="segmented small" role="group" aria-label="How to edit this song">
+                <button type="button" id="modeSlides" class="seg" aria-pressed="true">Slides</button>
+                <button type="button" id="modeText" class="seg" aria-pressed="false">Text</button>
+              </div>
+              <button type="button" id="copySong" class="btn primary sm">Copy text</button>
+              <button type="button" id="dlPro" class="btn secondary sm">.pro</button>
+              <button type="button" id="dlTxt" class="btn secondary sm">.txt</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="main-body">
+          <div id="warnings" class="warnings" hidden></div>
+          <div id="notes" class="notes" hidden></div>
+          <div id="songBody" class="song-body"></div>
+          <nav id="songNav" class="song-nav" aria-label="Previous and next song"></nav>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <!-- ── settings drawer ───────────────────────────────────────────────── -->
+  <div id="backdrop" class="backdrop" hidden>
+    <div class="drawer" role="dialog" aria-modal="true" aria-labelledby="drawerTitle">
+      <div class="drawer-head">
+        <span id="drawerTitle" class="drawer-title">Settings</span>
+        <button type="button" id="closeSettings" class="icon-btn" aria-label="Close settings">&times;</button>
+      </div>
+      <div class="drawer-body">
+        <div class="group-label">Layout</div>
+        <div id="steppers"></div>
+        <div id="toggles"></div>
+        <div class="group-label spaced">Slide styling (export only)</div>
+        <label class="field-row">
+          <span>Font</span>
+          <input type="text" id="fontFamily" value="Arial" class="field w-font">
+        </label>
+        <label class="field-row">
+          <span>Size (pt)</span>
+          <input type="number" id="fontSize" min="12" max="200" value="64" class="field w-size">
+        </label>
+        <label class="field-row">
+          <span>Slide size</span>
+          <select id="slideSize" class="field">
+            <option value="1920x1080" selected>1920 &times; 1080</option>
+            <option value="1280x720">1280 &times; 720</option>
+            <option value="3840x2160">3840 &times; 2160</option>
+            <option value="1024x768">1024 &times; 768 (4:3)</option>
+          </select>
+        </label>
+        <p class="drawer-note">Changing a layout setting re-splits every song and discards hand edits.</p>
       </div>
     </div>
+  </div>
 
-    <div id="warnings" class="warnings" hidden></div>
-    <div id="songTabs" class="song-tabs" role="tablist" aria-label="Which song to edit" hidden></div>
-    <div id="songs" class="songs"></div>
-
-    <div class="export-bar">
-      <div class="export-summary">
-        <strong id="exportWhat">Ready to export</strong>
-        <span id="exportDetail"></span>
-      </div>
-      <div class="export-actions">
-        <button type="button" id="copyAll" class="ghost" title="Every song in one block. Use a song's own Copy text button for a clean ProPresenter import.">Copy all as text</button>
-        <button type="button" id="downloadAll" class="primary big">Download</button>
-      </div>
-    </div>
-  </section>
-
-  <section class="about">
-    <h2>What it does</h2>
-    <div class="about-grid">
-      <div>
-        <h3>Takes a file or a paste</h3>
-        <p>Drop in a PDF, or paste the lyrics straight into the box &mdash; chords and all. Either way you get the same slides. Each song&rsquo;s <em>Copy text</em> gives you exactly what ProPresenter&rsquo;s text import wants: the title, then a blank line starts a slide and <code>[Chorus 1]</code> names a group.</p>
-      </div>
-      <div>
-        <h3>Edit it however suits</h3>
-        <p>Drag slides between sections, fold a song or a section away, or switch the whole song to <em>Text</em> and put the slide breaks exactly where you want them &mdash; a blank line is a break. <em>Re-split</em> hands it back to the automatic layout.</p>
-      </div>
-      <div>
-        <h3>Reads the real layout</h3>
-        <p>Song sheets are usually two columns. Text is rebuilt from glyph positions and read left column top-to-bottom, then right — not in whatever order the PDF happens to store it.</p>
-      </div>
-      <div>
-        <h3>Strips the chords</h3>
-        <p>A line is chords when every token on it is one. The grammar is strict, so <em>All</em>, <em>And</em>, <em>Grace</em> and <em>Christ</em> stay in the lyrics while <code>F#m7b5</code> and <code>C|C|D|G/B|</code> go.</p>
-      </div>
-      <div>
-        <h3>Rebuilds the lines</h3>
-        <p>Syllable breaks are rejoined (<code>for-gives</code> → <code>forgives</code>), chord-alignment padding collapses, and long lines split into two balanced halves that stay on one slide.</p>
-      </div>
-      <div>
-        <h3>Keeps the structure</h3>
-        <p>Verse, Chorus and Bridge become ProPresenter groups with their usual colours, and an arrangement plays them back in the order the sheet prints — repeats included. Every song opens on a blank slide.</p>
-      </div>
-    </div>
-    <p class="footnote">
-      Output is import-ready text you can copy straight into ProPresenter, or a ProPresenter <code>.pro</code> document (version 7 and later, including 18 and 21).
-      Built with <a href="https://mozilla.github.io/pdf.js/">pdf.js</a>.
-      <a href="https://github.com/charlesverdad/lyric-parser">Source on GitHub</a>.
-    </p>
-  </section>
-</main>
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+</div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js" defer></script>
 <script type="module" src="js/app.js"></script>
