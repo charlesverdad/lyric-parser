@@ -136,3 +136,24 @@ Notes worth carrying into similar work. Concise on purpose.
   each PR to `main` *before* merging the one below it.
 - A zero value in a layout limit (`maxLines: 0`) made the overflow loop advance by
   zero and spin until V8 OOMed. Floor user-supplied limits at 1.
+
+## Implementing a claude.ai/design file
+
+- `DesignSync` is only available in the session that ran `/design-login`;
+  subagents can't load it. Fetch the `.dc.html` in the parent session and save
+  it to a local file before delegating.
+- A `.dc.html` script is prototype logic: its parser, layout and downloads are
+  stand-ins (downloads only toast). Treat the markup and copy as the spec and
+  keep the real `js/` pipeline.
+- Things the prototype gets right that are easy to miss: the opening blank
+  section is not editable, and "Blank" stays out of the Order chips even though
+  the real arrangement contains it for export.
+- Text-mode drafts are hand edits too. A layout change must confirm before
+  `relayout()` clears them, or typed text vanishes silently.
+
+## Browser checks without the Chrome extension
+
+- `playwright-core` in the scratchpad, launched with `executablePath` set to the
+  system Chrome, gives a headless smoke test with no browser download: paste
+  the fixture, switch songs, catch the `.pro`/`.zip` download events, check
+  phone width for `scrollWidth` overflow, and fail on `pageerror`.
