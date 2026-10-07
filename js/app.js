@@ -17,6 +17,7 @@ import { normalizeSong } from './lyrics.js';
 import { layoutSong, toSlides } from './reflow.js';
 import { toFiles } from './pipeline.js';
 import { songToText, parseSongText } from './plaintext.js';
+import { createHistory, baseFromPath, idFromPath, formatWhen } from './history.js';
 
 pdfjs.GlobalWorkerOptions.workerSrc =
   'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/6.2.108/pdf.worker.min.mjs';
@@ -42,6 +43,7 @@ const dom = {
   steppers: el('steppers'), toggles: el('toggles'),
   fontFamily: el('fontFamily'), fontSize: el('fontSize'), slideSize: el('slideSize'),
   toast: el('toast'),
+  brand: el('brand'), recent: el('recent'), recentList: el('recentList'),
 };
 
 /** Parsed songs straight from the input, before normalisation or layout. */
@@ -191,13 +193,16 @@ function syncDrawer() {
 dom.fontFamily.addEventListener('change', () => {
   settings.fontFamily = dom.fontFamily.value.trim() || 'Arial';
   syncDrawer();
+  scheduleSave();
 });
 dom.fontSize.addEventListener('change', () => {
   settings.fontSize = clamp(Number(dom.fontSize.value), 12, 200);
   syncDrawer();
+  scheduleSave();
 });
 dom.slideSize.addEventListener('change', () => {
   settings.slideSize = dom.slideSize.value;
+  scheduleSave();
 });
 
 let drawerReturnFocus = null;
@@ -261,6 +266,7 @@ async function loadPdf(file) {
     sourceName = name;
     setStatus('');
     relayout();
+    beginSession();
     showScreen('results');
   } catch (error) {
     console.error(error);
@@ -296,6 +302,7 @@ function loadPastedText() {
     sourceName = parsed[0].title || 'songs';
     setStatus('');
     relayout();
+    beginSession();
     showScreen('results');
   } catch (error) {
     console.error(error);
@@ -310,6 +317,7 @@ function showScreen(which) {
   dom.results.hidden = !results;
   dom.topActions.hidden = !results;
   dom.totals.hidden = !results;
+  document.body.classList.toggle('on-results', results);
   if (results) dom.main.scrollTop = 0;
 }
 
@@ -322,6 +330,7 @@ function relayout({ keepActive = false } = {}) {
   edited = false;
   resetView({ keepActive });
   render();
+  scheduleSave();
 }
 
 /**
@@ -538,7 +547,10 @@ function renderTextEditor() {
   area.spellcheck = false;
   area.setAttribute('aria-label', `${songs[active].title} as text`);
   area.value = drafts.get(active) ?? songToText(songs[active]);
-  area.addEventListener('input', () => drafts.set(active, area.value));
+  area.addEventListener('input', () => {
+    drafts.set(active, area.value);
+    scheduleSave();
+  });
 
   const actions = document.createElement('div');
   actions.className = 'text-actions';
@@ -613,7 +625,7 @@ function applyText(songIndex, text, { resplit = false, redraw = true } = {}) {
     arrangement: reconcileArrangement(song.arrangement, groups),
   };
   drafts.delete(songIndex);
-  edited = true;
+  markEdited();
   if (redraw) render();
   else renderChrome();
 }
@@ -745,7 +757,7 @@ function renderSlide(lines, groupIndex, slideIndex) {
       .split('\n')
       .map((l) => l.trim())
       .filter((l) => l !== '');
-    edited = true;
+    markEdited();
     const nowEmpty = current.slides[slideIndex].length === 0;
     node.classList.toggle('empty', nowEmpty && !current.blank);
     node.classList.toggle('blank', nowEmpty && Boolean(current.blank));
@@ -898,7 +910,7 @@ function cardButton(glyph, label, onClick) {
  */
 function insertSlide(groupIndex, at) {
   songs[active].groups[groupIndex].slides.splice(at, 0, ['']);
-  edited = true;
+  markEdited();
   render();
   slideTextarea(groupIndex, at)?.focus();
 }
@@ -913,7 +925,7 @@ function insertSlide(groupIndex, at) {
  */
 function removeSlide(groupIndex, at) {
   songs[active].groups[groupIndex].slides.splice(at, 1);
-  edited = true;
+  markEdited();
   render();
 }
 
@@ -940,7 +952,7 @@ function moveSlide(from, to) {
   const [slide] = source.slides.splice(from.slideIndex, 1);
   if (slide === undefined) return;
   target.slides.splice(Math.max(0, Math.min(at, target.slides.length)), 0, slide);
-  edited = true;
+  markEdited();
   dragging = null;
   render();
 }
@@ -1104,15 +1116,9 @@ dom.modeSlides.addEventListener('click', () => setTextMode(false));
 dom.modeText.addEventListener('click', () => setTextMode(true));
 
 dom.reset.addEventListener('click', () => {
-  parsed = [];
-  songs = [];
-  edited = false;
-  resetView();
   dom.file.value = '';
   dom.paste.value = '';
-  setStatus('');
-  closeDrawer();
-  showScreen('input');
+  goHome({ push: true });
 });
 
 // ↑/↓ and j/k switch songs when focus is not in a field.
@@ -1187,4 +1193,209 @@ dom.pasteSample.addEventListener('click', () => {
   loadPastedText();
 });
 
+// ── history and routing ──────────────────────────────────────────────────────
+// Every parse gets a uuid and the URL becomes <base>/<uuid>. The parse itself is
+// kept in localStorage (see history.js), so the URL survives a reload, the back
+// button and an accidental trip to the main menu.
+
+const store = createHistory({
+  storage: (() => {
+    try { return window.localStorage; } catch { return null; }
+  })(),
+});
+
+/** The directory the app is served from: "/" locally, "/lyric-parser/" on Pages. */
+const BASE = baseFromPath(location.pathname);
+
+/** Id and creation time of the parse on show; null on the main menu. */
+let currentId = null;
+let currentCreated = 0;
+
+function newId() {
+  if (globalThis.crypto?.randomUUID) return crypto.randomUUID();
+  const b = crypto.getRandomValues(new Uint8Array(16));
+  b[6] = (b[6] & 0x0f) | 0x40;
+  b[8] = (b[8] & 0x3f) | 0x80;
+  const h = [...b].map((x) => x.toString(16).padStart(2, '0')).join('');
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
+}
+
+let saveTimer = 0;
+
+/** Everything needed to restore the results screen exactly. No PDF bytes. */
+const snapshot = () => ({
+  id: currentId,
+  title: sourceName,
+  songCount: songs.length,
+  createdAt: currentCreated,
+  updatedAt: Date.now(),
+  sourceName, parsed, songs, settings: { ...settings }, edited,
+  // Typed-but-unapplied Text-mode boxes stay drafts across a restore.
+  drafts: [...drafts],
+  textMode: [...textMode],
+  active,
+});
+
+function saveNow() {
+  clearTimeout(saveTimer);
+  saveTimer = 0;
+  if (currentId && parsed.length) store.save(snapshot());
+}
+
+/** Debounced, so typing does not rewrite storage on every keystroke. */
+function scheduleSave() {
+  if (!currentId) return;
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(saveNow, 500);
+}
+
+function markEdited() {
+  edited = true;
+  scheduleSave();
+}
+
+/** A parse just succeeded: name it, save it and point the URL at it. */
+function beginSession() {
+  currentId = newId();
+  currentCreated = Date.now();
+  saveNow();
+  window.history.pushState(null, '', BASE + currentId);
+}
+
+/** Show a saved parse. Returns false if the entry is unusable. */
+function openEntry(entry) {
+  if (!entry || !Array.isArray(entry.parsed) || !Array.isArray(entry.songs) || !entry.songs.length) {
+    return false;
+  }
+  // Whatever is on show is saved before it is replaced, and any pending
+  // debounce is cancelled so it cannot save the wrong parse afterwards.
+  if (currentId) saveNow();
+  try {
+    return restoreEntry(entry);
+  } catch (error) {
+    console.error(error);
+    currentId = null;
+    parsed = [];
+    songs = [];
+    resetView();
+    return false;
+  }
+}
+
+function restoreEntry(entry) {
+  parsed = entry.parsed;
+  songs = entry.songs;
+  Object.assign(settings, entry.settings ?? {});
+  sourceName = entry.sourceName ?? entry.title ?? 'songs';
+  edited = Boolean(entry.edited);
+  currentId = entry.id;
+  currentCreated = entry.createdAt ?? Date.now();
+  resetView();
+  if (Array.isArray(entry.drafts)) {
+    for (const [index, text] of entry.drafts) {
+      if (songs[index] && typeof text === 'string') drafts.set(index, text);
+    }
+  }
+  if (Array.isArray(entry.textMode)) {
+    for (const index of entry.textMode) if (songs[index]) textMode.add(index);
+  }
+  if (Number.isInteger(entry.active) && songs[entry.active]) active = entry.active;
+  closeDrawer();
+  syncDrawer();
+  setStatus('');
+  render();
+  showScreen('results');
+  return true;
+}
+
+/**
+ * Back to the main menu. Edits are saved first (including text typed into a
+ * Text-mode box but not applied), so nothing is lost by going home.
+ */
+function goHome({ push = false } = {}) {
+  // Unapplied drafts are saved as drafts, not applied: the user can still Apply or Revert.
+  saveNow();
+  currentId = null;
+  parsed = [];
+  songs = [];
+  edited = false;
+  resetView();
+  closeDrawer();
+  setStatus('');
+  showScreen('input');
+  renderRecent();
+  if (push && location.pathname !== BASE) window.history.pushState(null, '', BASE);
+}
+
+/** Make the screen match the URL. Runs on load and on back/forward. */
+function route() {
+  const id = idFromPath(location.pathname);
+  if (!id) {
+    goHome();
+    return;
+  }
+  if (id === currentId && !dom.results.hidden) return;
+  if (currentId) saveNow();
+  if (!openEntry(store.get(id))) {
+    goHome();
+    setStatus(NOT_FOUND);
+  }
+}
+
+const NOT_FOUND = "That parse isn't in this browser's history. It may have been removed or expired.";
+
+function renderRecent() {
+  const entries = store.list();
+  dom.recent.hidden = entries.length === 0;
+  dom.recentList.replaceChildren(...entries.map((entry) => {
+    const row = document.createElement('li');
+    row.className = 'recent-row';
+    const link = document.createElement('a');
+    link.className = 'recent-link';
+    link.href = BASE + entry.id;
+    const title = document.createElement('span');
+    title.className = 'recent-title';
+    title.textContent = entry.title;
+    const meta = document.createElement('span');
+    meta.className = 'recent-meta';
+    meta.textContent = `${plural(entry.songCount, 'song')} · ${formatWhen(entry.updatedAt)}`;
+    link.append(title, meta);
+    link.addEventListener('click', (event) => {
+      // Let the browser handle open-in-new-tab and friends.
+      if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      event.preventDefault();
+      if (openEntry(store.get(entry.id))) {
+        window.history.pushState(null, '', BASE + entry.id);
+      } else {
+        goHome();
+        setStatus(NOT_FOUND);
+      }
+    });
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'recent-remove';
+    remove.textContent = '×';
+    remove.title = `Remove ${entry.title} from history`;
+    remove.setAttribute('aria-label', `Remove ${entry.title} from history`);
+    remove.addEventListener('click', () => {
+      store.remove(entry.id);
+      renderRecent();
+    });
+    row.append(link, remove);
+    return row;
+  }));
+}
+
+dom.brand.addEventListener('click', (event) => {
+  if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+  event.preventDefault();
+  goHome({ push: true });
+});
+window.addEventListener('popstate', route);
+window.addEventListener('pagehide', saveNow);
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') saveNow();
+});
+
 buildDrawer();
+route();

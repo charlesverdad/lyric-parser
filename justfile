@@ -15,9 +15,10 @@ test:
 test-one NAME:
     node --test test/{{NAME}}.test.mjs
 
-# Serve the static site locally on :8080
+# Serve the static site locally on :8080. -s falls back to index.html for
+# unknown paths (/<uuid>), as 404.html does on GitHub Pages.
 serve:
-    npx --yes serve -l 8080 .
+    npx --yes serve -s -l 8080 .
 
 # Dump pdf.js text items for a PDF (debugging aid)
 dump PDF PAGE="":
