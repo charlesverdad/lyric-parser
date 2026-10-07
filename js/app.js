@@ -112,7 +112,7 @@ const TOGGLES = [
  */
 function setLayoutSetting(key, value) {
   if (settings[key] === value) return true;
-  if (parsed.length && edited && !confirm('Re-splitting the slides will discard your edits. Continue?')) {
+  if (parsed.length && (edited || hasUnappliedDraft()) && !confirm('Re-splitting the slides will discard your edits. Continue?')) {
     syncDrawer();
     return false;
   }
@@ -121,6 +121,10 @@ function setLayoutSetting(key, value) {
   syncDrawer();
   return true;
 }
+
+/** Text typed into a Text-mode box but not applied yet counts as a hand edit. */
+const hasUnappliedDraft = () =>
+  [...drafts].some(([index, text]) => songs[index] && text !== songToText(songs[index]));
 
 function buildDrawer() {
   for (const spec of STEPPERS) {
@@ -460,7 +464,7 @@ function renderWarnings(song) {
 /** The play order, and which words were rejoined. */
 function renderNotes(song) {
   const joins = [...new Set(song.hyphenJoins ?? [])];
-  if (!song.arrangement.length && !joins.length) {
+  if (!song.arrangement.some((n) => !song.groups.some((g) => g.blank && g.name === n)) && !joins.length) {
     dom.notes.hidden = true;
     dom.notes.replaceChildren();
     return;
@@ -474,7 +478,8 @@ function renderNotes(song) {
     label.className = 'label';
     label.textContent = 'Order';
     order.append(label);
-    for (const name of song.arrangement) {
+    const blankNames = new Set(song.groups.filter((g) => g.blank).map((g) => g.name));
+    for (const name of song.arrangement.filter((n) => !blankNames.has(n))) {
       const pill = document.createElement('span');
       pill.className = 'pill';
       pill.textContent = name;
@@ -668,18 +673,18 @@ function renderGroup(group, groupIndex) {
   });
   // Appends to the end, and is the only way back into a group whose slides
   // have all been deleted.
-  slides.append(addSlideCard(groupIndex));
+  if (!group.blank) slides.append(addSlideCard(groupIndex));
 
   // Dropping on the gaps between cards - or anywhere in an empty section -
   // means "put it at the end here", which is what makes a section with no
   // slides left a reachable target at all.
   slides.addEventListener('dragover', (event) => {
-    if (!dragging) return;
+    if (!dragging || group.blank) return;
     event.preventDefault();
     event.dataTransfer.dropEffect = 'move';
   });
   slides.addEventListener('drop', (event) => {
-    if (!dragging) return;
+    if (!dragging || group.blank) return;
     event.preventDefault();
     moveSlide(dragging, { groupIndex, at: songs[active].groups[groupIndex].slides.length });
   });
@@ -751,15 +756,17 @@ function renderSlide(lines, groupIndex, slideIndex) {
 
   const tools = document.createElement('div');
   tools.className = 'cap-tools';
-  tools.append(
-    grip(node, groupIndex, slideIndex),
-    cardButton('+', `Add a slide after slide ${slideIndex + 1}`, () => insertSlide(groupIndex, slideIndex + 1)),
-    cardButton('×', `Remove slide ${slideIndex + 1}`, () => removeSlide(groupIndex, slideIndex)),
-  );
+  if (!group.blank) {
+    tools.append(
+      grip(node, groupIndex, slideIndex),
+      cardButton('+', `Add a slide after slide ${slideIndex + 1}`, () => insertSlide(groupIndex, slideIndex + 1)),
+      cardButton('×', `Remove slide ${slideIndex + 1}`, () => removeSlide(groupIndex, slideIndex)),
+    );
+  }
   caption.append(label, tools);
 
   node.append(card, caption);
-  attachDragTarget(node, groupIndex, slideIndex);
+  if (!group.blank) attachDragTarget(node, groupIndex, slideIndex);
   return node;
 }
 
@@ -922,7 +929,7 @@ function moveSlide(from, to) {
   const groups = songs[active].groups;
   const source = groups[from.groupIndex];
   const target = groups[to.groupIndex];
-  if (!source || !target) return;
+  if (!source || !target || target.blank) return;
 
   let at = to.at;
   if (source === target) {
