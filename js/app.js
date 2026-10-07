@@ -4,6 +4,9 @@
  * Holds the parsed songs, re-runs layout when a setting changes, and lets
  * slides be edited before export. Every conversion step lives in the shared
  * modules under `js/`, so this file is only wiring and DOM.
+ *
+ * One song is shown at a time: a sidebar (wide windows) or a chip strip
+ * (narrow ones) picks which.
  */
 
 import * as pdfjs from 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/6.2.108/pdf.min.mjs';
@@ -12,7 +15,6 @@ import { linesFromText } from './text-input.js';
 import { parseSongs } from './song-parser.js';
 import { normalizeSong } from './lyrics.js';
 import { layoutSong, toSlides } from './reflow.js';
-import { groupColor } from './propresenter.js';
 import { toFiles } from './pipeline.js';
 import { songToText, parseSongText } from './plaintext.js';
 
@@ -22,20 +24,24 @@ pdfjs.GlobalWorkerOptions.workerSrc =
 const el = (id) => document.getElementById(id);
 
 const dom = {
-  drop: el('drop'), file: el('file'), browse: el('browse'), status: el('status'),
+  totals: el('totals'), topActions: el('topActions'),
+  copyAll: el('copyAll'), openSettings: el('openSettings'), reset: el('reset'),
+  downloadAll: el('downloadAll'),
+  inputScreen: el('inputScreen'), results: el('results'),
+  drop: el('drop'), file: el('file'), status: el('status'),
   tabPdf: el('tabPdf'), tabPaste: el('tabPaste'),
   panelPdf: el('panelPdf'), panelPaste: el('panelPaste'),
   paste: el('paste'), convert: el('convert'), pasteSample: el('pasteSample'),
-  copyAll: el('copyAll'),
-  exportWhat: el('exportWhat'), exportDetail: el('exportDetail'),
-  results: el('results'), songs: el('songs'), warnings: el('warnings'),
-  songTabs: el('songTabs'),
-  maxLines: el('maxLines'), maxChars: el('maxChars'),
-  rejoinHyphens: el('rejoinHyphens'), straightQuotes: el('straightQuotes'),
-  dropTrailingCommas: el('dropTrailingCommas'),
-  blankFirstSlide: el('blankFirstSlide'),
+  strip: el('strip'), songList: el('songList'), songCount: el('songCount'),
+  main: el('main'), position: el('position'), songTitle: el('songTitle'),
+  songKey: el('songKey'), songMeta: el('songMeta'),
+  modeSlides: el('modeSlides'), modeText: el('modeText'),
+  copySong: el('copySong'), dlPro: el('dlPro'), dlTxt: el('dlTxt'),
+  warnings: el('warnings'), notes: el('notes'), songBody: el('songBody'), songNav: el('songNav'),
+  backdrop: el('backdrop'), closeSettings: el('closeSettings'),
+  steppers: el('steppers'), toggles: el('toggles'),
   fontFamily: el('fontFamily'), fontSize: el('fontSize'), slideSize: el('slideSize'),
-  downloadAll: el('downloadAll'), reset: el('reset'),
+  toast: el('toast'),
 };
 
 /** Parsed songs straight from the input, before normalisation or layout. */
@@ -46,55 +52,197 @@ let songs = [];
 let edited = false;
 let sourceName = 'songs';
 
-// ── editor view state ────────────────────────────────────────────────────────
-// All of this is *how the editor is being looked at*, not part of a song, so
-// none of it is exported. It is keyed by index and therefore only meaningful
-// for the songs currently loaded; `relayout` and "Start over" clear it.
+// ── view state ───────────────────────────────────────────────────────────────
+// How the editor is being looked at, not part of a song, so none of it is
+// exported. Keyed by song index, hence cleared whenever the songs are re-derived.
 
-/** The song shown on its own, or null for all of them. */
-let activeSong = null;
-/** Song indices whose body is folded away. */
-const collapsedSongs = new Set();
-/** "songIndex:groupIndex" for each folded section. */
-const collapsedGroups = new Set();
+/** Index of the song on show. */
+let active = 0;
 /** Song indices being edited as text rather than as cards. */
 const textMode = new Set();
-/** The slide currently being dragged, or null. */
+/** Unapplied text-mode edits, by song index, so switching songs loses nothing. */
+const drafts = new Map();
+/** The slide currently being dragged ({ groupIndex, slideIndex }), or null. */
 let dragging = null;
 
-/** Forget every collapse, tab and mode - the songs they referred to are gone. */
-function resetView() {
-  activeSong = null;
-  collapsedSongs.clear();
-  collapsedGroups.clear();
+function resetView({ keepActive = false } = {}) {
+  active = keepActive ? Math.min(active, Math.max(0, songs.length - 1)) : 0;
   textMode.clear();
+  drafts.clear();
   dragging = null;
 }
 
 // ── settings ─────────────────────────────────────────────────────────────────
 
-function readSettings() {
-  const [width, height] = dom.slideSize.value.split('x').map(Number);
-  return {
-    maxLines: clamp(Number(dom.maxLines.value), 1, 6),
-    maxChars: clamp(Number(dom.maxChars.value), 16, 90),
-    rejoinHyphens: dom.rejoinHyphens.checked,
-    straightQuotes: dom.straightQuotes.checked,
-    dropTrailingCommas: dom.dropTrailingCommas.checked,
-    blankFirstSlide: dom.blankFirstSlide.checked,
-    fontFamily: dom.fontFamily.value.trim() || 'Arial',
-    fontSize: clamp(Number(dom.fontSize.value), 12, 200),
-    slideSize: { width, height },
-  };
-}
+const settings = {
+  maxLines: 2,
+  maxChars: 40,
+  rejoinHyphens: true,
+  straightQuotes: false,
+  dropTrailingCommas: true,
+  blankFirstSlide: true,
+  fontFamily: 'Arial',
+  fontSize: 64,
+  slideSize: '1920x1080',
+};
 
 const clamp = (n, lo, hi) => (Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : lo);
 
+/** The options the shared pipeline modules expect. */
+function readSettings() {
+  const [width, height] = settings.slideSize.split('x').map(Number);
+  return { ...settings, slideSize: { width, height } };
+}
+
+const STEPPERS = [
+  { key: 'maxLines', label: 'Lines per slide', min: 1, max: 6, step: 1 },
+  { key: 'maxChars', label: 'Max characters per line', min: 16, max: 90, step: 2 },
+];
+
+const TOGGLES = [
+  { key: 'rejoinHyphens', label: 'Rejoin split words', hint: 'for-gives → forgives' },
+  { key: 'dropTrailingCommas', label: 'Drop trailing commas', hint: 'The line break already does its job' },
+  { key: 'straightQuotes', label: 'Straighten quotes', hint: '’ → \'' },
+  { key: 'blankFirstSlide', label: 'Blank slide first', hint: 'Cue a song before the first line goes up' },
+];
+
+/**
+ * Change a layout setting. Re-splits every song, so it asks first if there are
+ * hand edits to lose. Returns whether the change went ahead.
+ */
+function setLayoutSetting(key, value) {
+  if (settings[key] === value) return true;
+  if (parsed.length && (edited || hasUnappliedDraft()) && !confirm('Re-splitting the slides will discard your edits. Continue?')) {
+    syncDrawer();
+    return false;
+  }
+  settings[key] = value;
+  if (parsed.length) relayout({ keepActive: true });
+  syncDrawer();
+  return true;
+}
+
+/** Text typed into a Text-mode box but not applied yet counts as a hand edit. */
+const hasUnappliedDraft = () =>
+  [...drafts].some(([index, text]) => songs[index] && text !== songToText(songs[index]));
+
+function buildDrawer() {
+  for (const spec of STEPPERS) {
+    const row = document.createElement('div');
+    row.className = 'stepper-row';
+    const label = document.createElement('span');
+    label.textContent = spec.label;
+    const group = document.createElement('div');
+    group.className = 'stepper';
+    const dec = button('−', '', () => setLayoutSetting(spec.key, clamp(settings[spec.key] - spec.step, spec.min, spec.max)));
+    const val = document.createElement('span');
+    val.className = 'val';
+    val.dataset.stepper = spec.key;
+    const inc = button('+', '', () => setLayoutSetting(spec.key, clamp(settings[spec.key] + spec.step, spec.min, spec.max)));
+    dec.dataset.dec = spec.key;
+    inc.dataset.inc = spec.key;
+    dec.setAttribute('aria-label', `Fewer: ${spec.label}`);
+    inc.setAttribute('aria-label', `More: ${spec.label}`);
+    group.append(dec, val, inc);
+    row.append(label, group);
+    dom.steppers.append(row);
+  }
+  for (const spec of TOGGLES) {
+    const row = document.createElement('button');
+    row.type = 'button';
+    row.className = 'toggle-row';
+    row.setAttribute('role', 'switch');
+    row.dataset.toggle = spec.key;
+    const text = document.createElement('span');
+    text.className = 'lbl';
+    const name = document.createElement('span');
+    name.textContent = spec.label;
+    const hint = document.createElement('span');
+    hint.className = 'hint';
+    hint.textContent = spec.hint;
+    text.append(name, hint);
+    const sw = document.createElement('span');
+    sw.className = 'switch';
+    row.append(text, sw);
+    row.addEventListener('click', () => setLayoutSetting(spec.key, !settings[spec.key]));
+    dom.toggles.append(row);
+  }
+  syncDrawer();
+}
+
+/** Reflect `settings` in the drawer controls. */
+function syncDrawer() {
+  for (const spec of STEPPERS) {
+    const v = settings[spec.key];
+    dom.steppers.querySelector(`[data-stepper="${spec.key}"]`).textContent = String(v);
+    dom.steppers.querySelector(`[data-dec="${spec.key}"]`).disabled = v <= spec.min;
+    dom.steppers.querySelector(`[data-inc="${spec.key}"]`).disabled = v >= spec.max;
+  }
+  for (const spec of TOGGLES) {
+    dom.toggles.querySelector(`[data-toggle="${spec.key}"]`)
+      .setAttribute('aria-checked', String(settings[spec.key]));
+  }
+  dom.fontFamily.value = settings.fontFamily;
+  dom.fontSize.value = String(settings.fontSize);
+  dom.slideSize.value = settings.slideSize;
+}
+
+// Styling settings only affect export, so they never re-split anything.
+dom.fontFamily.addEventListener('change', () => {
+  settings.fontFamily = dom.fontFamily.value.trim() || 'Arial';
+  syncDrawer();
+});
+dom.fontSize.addEventListener('change', () => {
+  settings.fontSize = clamp(Number(dom.fontSize.value), 12, 200);
+  syncDrawer();
+});
+dom.slideSize.addEventListener('change', () => {
+  settings.slideSize = dom.slideSize.value;
+});
+
+let drawerReturnFocus = null;
+
+function openDrawer() {
+  drawerReturnFocus = document.activeElement;
+  dom.backdrop.hidden = false;
+  dom.closeSettings.focus();
+}
+
+function closeDrawer() {
+  if (dom.backdrop.hidden) return;
+  dom.backdrop.hidden = true;
+  drawerReturnFocus?.focus?.();
+}
+
+dom.openSettings.addEventListener('click', openDrawer);
+dom.closeSettings.addEventListener('click', closeDrawer);
+dom.backdrop.addEventListener('click', (event) => {
+  if (event.target === dom.backdrop) closeDrawer();
+});
+
+// ── toast ────────────────────────────────────────────────────────────────────
+
+let toastTimer = 0;
+
+function toast(message) {
+  dom.toast.textContent = message;
+  dom.toast.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => {
+    dom.toast.hidden = true;
+  }, 1800);
+}
+
 // ── loading ──────────────────────────────────────────────────────────────────
+
+function setStatus(message, isError = false) {
+  dom.status.textContent = message;
+  dom.status.classList.toggle('error', isError);
+}
 
 async function loadPdf(file) {
   if (!file) return;
-  sourceName = file.name.replace(/\.pdf$/i, '') || 'songs';
+  const name = file.name.replace(/\.pdf$/i, '') || 'songs';
   setStatus(`Reading ${file.name}…`);
   dom.drop.classList.add('busy');
 
@@ -102,24 +250,24 @@ async function loadPdf(file) {
     const data = new Uint8Array(await file.arrayBuffer());
     const doc = await pdfjs.getDocument({ data }).promise;
     const lines = await extractLines(doc);
-    parsed = parseSongs(lines);
-    edited = false;
+    const found = parseSongs(lines);
 
-    if (!parsed.length || parsed.every((s) => s.groups.length === 0)) {
+    if (!found.length || found.every((s) => s.groups.length === 0)) {
       setStatus('No lyrics found in that PDF. Is it a scanned image rather than text?', true);
-      dom.results.hidden = true;
       return;
     }
 
+    parsed = found;
+    sourceName = name;
+    setStatus('');
     relayout();
-    dom.results.hidden = false;
-    announceLoaded();
+    showScreen('results');
   } catch (error) {
     console.error(error);
     setStatus(`Could not read that PDF: ${error.message}`, true);
-    dom.results.hidden = true;
   } finally {
     dom.drop.classList.remove('busy');
+    dom.file.value = '';
   }
 }
 
@@ -137,41 +285,42 @@ function loadPastedText() {
     return;
   }
   try {
-    parsed = parseSongs(linesFromText(text));
-    edited = false;
+    const found = parseSongs(linesFromText(text));
 
-    if (!parsed.length || parsed.every((s) => s.groups.length === 0)) {
+    if (!found.length || found.every((s) => s.groups.length === 0)) {
       setStatus('No lyrics found in that text — every line looked like a chord or a direction.', true);
-      dom.results.hidden = true;
       return;
     }
 
-    relayout();
+    parsed = found;
     sourceName = parsed[0].title || 'songs';
-    dom.results.hidden = false;
-    announceLoaded();
+    setStatus('');
+    relayout();
+    showScreen('results');
   } catch (error) {
     console.error(error);
     setStatus(`Could not parse that text: ${error.message}`, true);
-    dom.results.hidden = true;
   }
 }
 
-/** Report what was found, once songs are laid out. */
-function announceLoaded() {
-  const slides = songs.reduce((n, s) => n + countSlides(s), 0);
-  const count = `${songs.length} song${songs.length === 1 ? '' : 's'}, ${slides} slides`;
-  setStatus(`${count}. Edit any slide, then copy or download.`);
+/** Switch between the input screen and the results. */
+function showScreen(which) {
+  const results = which === 'results';
+  dom.inputScreen.hidden = results;
+  dom.results.hidden = !results;
+  dom.topActions.hidden = !results;
+  dom.totals.hidden = !results;
+  if (results) dom.main.scrollTop = 0;
 }
 
 /** Re-run normalisation and layout from the parsed source, discarding edits. */
-function relayout() {
+function relayout({ keepActive = false } = {}) {
   const options = readSettings();
   songs = parsed
     .map((song) => normalizeSong(song, options))
     .map((song) => layoutSong(song, options));
   edited = false;
-  resetView();
+  resetView({ keepActive });
   render();
 }
 
@@ -181,297 +330,234 @@ function relayout() {
  * The leading blank section is the exception - its slide is empty on purpose
  * and is written out - so it counts every slide it has.
  */
+const isEmptySlide = (lines) => lines.every((line) => line.trim() === '');
+
 const countGroupSlides = (group) =>
-  group.blank
-    ? group.slides.length
-    : group.slides.filter((slide) => slide.some((line) => line.trim() !== '')).length;
+  group.blank ? group.slides.length : group.slides.filter((slide) => !isEmptySlide(slide)).length;
 
 const countSlides = (song) => song.groups.reduce((n, g) => n + countGroupSlides(g), 0);
 
+const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+
 // ── rendering ────────────────────────────────────────────────────────────────
 
+/** Everything: chrome and the song on show. */
 function render() {
-  renderWarnings();
-  renderSongTabs();
-  dom.songs.replaceChildren(...songs.map(renderSong));
-  updateExport();
+  renderChrome();
+  renderSong();
 }
 
 /**
- * A tab per song, plus "All songs".
- *
- * A six-song set sheet is a very long page, and every song looks alike from a
- * distance. Narrowing to one at a time is the difference between editing and
- * scrolling. One song needs no tabs, so it gets none.
+ * The parts that summarise the songs: header totals, song list, song header.
+ * Cheap enough to redo on every keystroke, and it leaves the slide cards alone
+ * so typing keeps focus.
  */
-function renderSongTabs() {
-  if (songs.length < 2) {
-    dom.songTabs.hidden = true;
-    dom.songTabs.replaceChildren();
-    return;
-  }
-  dom.songTabs.hidden = false;
-
-  const tab = (label, index) => {
-    const node = document.createElement('button');
-    node.type = 'button';
-    node.className = 'song-tab';
-    node.setAttribute('role', 'tab');
-    node.setAttribute('aria-selected', String(activeSong === index));
-    node.textContent = label;
-    node.addEventListener('click', () => {
-      activeSong = index;
-      render();
-    });
-    return node;
-  };
-
-  dom.songTabs.replaceChildren(
-    tab('All songs', null),
-    ...songs.map((song, i) => tab(song.title || `Song ${i + 1}`, i)),
-  );
-}
-
-/**
- * Refresh the slide tallies after an edit.
- *
- * An emptied slide is dropped at export - projecting a blank is never what
- * someone clearing a box meant - so the counts have to stop including it.
- */
-function updateCounts() {
-  for (const [songIndex, song] of songs.entries()) {
-    const node = dom.songs.children[songIndex];
-    if (!node) continue;
-    const meta = node.querySelector('.song-meta');
-    if (meta) meta.textContent = `${song.groups.length} sections · ${countSlides(song)} slides`;
-    node.querySelectorAll('.group').forEach((groupNode, groupIndex) => {
-      const count = groupNode.querySelector('.group-count');
-      const n = countGroupSlides(song.groups[groupIndex]);
-      if (count) count.textContent = `${n} slide${n === 1 ? '' : 's'}`;
-    });
-  }
-  updateExport();
-}
-
-/**
- * Keep the export bar describing what the buttons would actually produce.
- *
- * Called after every edit, insertion and removal, so the count in the bar is
- * the count in the file - including slides that were emptied and will be
- * dropped, and sections that were emptied and will go with them.
- */
-function updateExport() {
-  const slides = songs.reduce((n, song) => n + countSlides(song), 0);
-  const sections = songs.reduce(
-    (n, song) => n + song.groups.filter((g) => countGroupSlides(g) > 0).length,
-    0,
-  );
+function renderChrome() {
+  const slides = songs.reduce((n, s) => n + countSlides(s), 0);
   const one = songs.length === 1;
 
-  dom.exportWhat.textContent = one
-    ? songs[0].title || 'Untitled'
-    : `${songs.length} songs`;
-  dom.exportDetail.textContent =
-    `${sections} section${sections === 1 ? '' : 's'} · ` +
-    `${slides} slide${slides === 1 ? '' : 's'}`;
-
-  dom.downloadAll.textContent = one
-    ? 'Download ProPresenter file'
-    : `Download ${songs.length} ProPresenter files (.zip)`;
-  dom.copyAll.textContent = one ? 'Copy as text' : 'Copy all as text';
+  dom.totals.textContent = `${sourceName} · ${plural(songs.length, 'song')} · ${plural(slides, 'slide')}`;
+  dom.copyAll.textContent = one ? 'Copy as text' : 'Copy all';
+  dom.downloadAll.textContent = one ? 'Download .pro' : 'Download all (.zip)';
   dom.downloadAll.disabled = slides === 0;
   dom.copyAll.disabled = slides === 0;
+
+  dom.songCount.textContent = String(songs.length);
+  dom.songList.replaceChildren(...songs.map(songRow));
+  dom.strip.replaceChildren(...songs.map(songChip));
+
+  const song = songs[active];
+  if (!song) return;
+  dom.position.textContent = `SONG ${active + 1} OF ${songs.length}`;
+  dom.songTitle.textContent = song.title;
+  dom.songKey.hidden = !song.key;
+  dom.songKey.textContent = song.key ?? '';
+  dom.songMeta.textContent = [
+    song.note,
+    plural(song.groups.length, 'section'),
+    plural(countSlides(song), 'slide'),
+  ].filter(Boolean).join(' · ');
+  const asText = textMode.has(active);
+  dom.modeSlides.setAttribute('aria-pressed', String(!asText));
+  dom.modeText.setAttribute('aria-pressed', String(asText));
 }
 
-function renderWarnings() {
-  const items = [];
-  for (const song of songs) {
-    for (const warning of song.warnings) items.push(`${song.title}: ${warning}`);
-    const joins = [...new Set(song.hyphenJoins ?? [])];
-    if (joins.length) items.push(`${song.title}: rejoined ${joins.join(', ')}`);
+function songRow(song, index) {
+  const node = document.createElement('button');
+  node.type = 'button';
+  node.className = 'song-row';
+  if (index === active) node.setAttribute('aria-current', 'true');
+  const num = document.createElement('span');
+  num.className = 'num';
+  num.textContent = String(index + 1);
+  const text = document.createElement('span');
+  text.className = 'txt';
+  const title = document.createElement('span');
+  title.className = 't';
+  title.textContent = song.title;
+  const sub = document.createElement('span');
+  sub.className = 's';
+  sub.textContent = [song.key, plural(countSlides(song), 'slide')].filter(Boolean).join(' · ');
+  text.append(title, sub);
+  node.append(num, text);
+  node.addEventListener('click', () => selectSong(index));
+  return node;
+}
+
+function songChip(song, index) {
+  const node = document.createElement('button');
+  node.type = 'button';
+  node.className = 'chip-song';
+  if (index === active) node.setAttribute('aria-current', 'true');
+  const num = document.createElement('span');
+  num.className = 'num';
+  num.textContent = String(index + 1);
+  node.append(num, document.createTextNode(song.title));
+  node.addEventListener('click', () => selectSong(index));
+  return node;
+}
+
+function selectSong(index) {
+  if (index < 0 || index >= songs.length || index === active) return;
+  active = index;
+  dragging = null;
+  render();
+  dom.main.scrollTop = 0;
+  // Keep the chosen chip in view on a narrow window.
+  dom.strip.querySelector('[aria-current="true"]')?.scrollIntoView?.({ block: 'nearest', inline: 'center' });
+  dom.songList.querySelector('[aria-current="true"]')?.scrollIntoView?.({ block: 'nearest' });
+}
+
+/** The song on show: warnings, order, slides or text, and prev/next. */
+function renderSong() {
+  const song = songs[active];
+  if (!song) return;
+
+  renderWarnings(song);
+  renderNotes(song);
+
+  if (textMode.has(active)) {
+    dom.songBody.replaceChildren(renderTextEditor());
+  } else {
+    dom.songBody.replaceChildren(...song.groups.map((group, gi) => renderGroup(group, gi)));
   }
-  if (!items.length) {
+  renderNav();
+}
+
+function renderWarnings(song) {
+  if (!song.warnings.length) {
     dom.warnings.hidden = true;
     return;
   }
   dom.warnings.hidden = false;
+  const heading = document.createElement('strong');
+  heading.textContent = 'Worth a look';
   const list = document.createElement('ul');
-  list.append(...items.map((text) => {
+  list.append(...song.warnings.map((text) => {
     const li = document.createElement('li');
     li.textContent = text;
     return li;
   }));
-  const heading = document.createElement('h3');
-  heading.textContent = 'Worth a look';
   dom.warnings.replaceChildren(heading, list);
 }
 
-function renderSong(song, songIndex) {
-  const node = document.createElement('article');
-  node.className = 'song';
-  // Tabs narrow the page to one song; the rest stay rendered so their edits,
-  // and the indices every handler closes over, survive the switch.
-  node.hidden = activeSong !== null && activeSong !== songIndex;
-
-  const collapsed = collapsedSongs.has(songIndex);
-  const asText = textMode.has(songIndex);
-  node.classList.toggle('collapsed', collapsed);
-
-  const head = document.createElement('div');
-  head.className = 'song-head';
-
-  const toggle = disclosure(!collapsed, `${collapsed ? 'Expand' : 'Collapse'} ${song.title}`, () => {
-    flip(collapsedSongs, songIndex);
-    refreshSong(songIndex);
-  });
-
-  const title = document.createElement('h2');
-  title.className = 'song-title';
-  title.textContent = song.title;
-  if (song.key) {
-    const key = document.createElement('span');
-    key.className = 'key';
-    key.textContent = song.note ? `${song.key} · ${song.note}` : song.key;
-    title.append(key);
+/** The play order, and which words were rejoined. */
+function renderNotes(song) {
+  const joins = [...new Set(song.hyphenJoins ?? [])];
+  if (!song.arrangement.some((n) => !song.groups.some((g) => g.blank && g.name === n)) && !joins.length) {
+    dom.notes.hidden = true;
+    dom.notes.replaceChildren();
+    return;
   }
-  // The heading is the biggest target on the card, so it folds too. The button
-  // beside it is what carries the state for a screen reader.
-  title.addEventListener('click', () => toggle.click());
+  dom.notes.hidden = false;
+  const parts = [];
+  if (song.arrangement.length) {
+    const order = document.createElement('div');
+    order.className = 'order';
+    const label = document.createElement('span');
+    label.className = 'label';
+    label.textContent = 'Order';
+    order.append(label);
+    const blankNames = new Set(song.groups.filter((g) => g.blank).map((g) => g.name));
+    for (const name of song.arrangement.filter((n) => !blankNames.has(n))) {
+      const pill = document.createElement('span');
+      pill.className = 'pill';
+      pill.textContent = name;
+      order.append(pill);
+    }
+    parts.push(order);
+  }
+  if (joins.length) {
+    const line = document.createElement('div');
+    line.className = 'joins';
+    line.textContent = `Rejoined split words: ${joins.join(', ')}`;
+    parts.push(line);
+  }
+  dom.notes.replaceChildren(...parts);
+}
 
-  const meta = document.createElement('span');
-  meta.className = 'song-meta';
-  meta.textContent = `${song.groups.length} sections · ${countSlides(song)} slides`;
-
-  const modes = document.createElement('div');
-  modes.className = 'song-modes';
-  modes.setAttribute('role', 'group');
-  modes.setAttribute('aria-label', 'How to edit this song');
-  modes.append(
-    modeButton('Slides', !asText, () => setTextMode(songIndex, false)),
-    modeButton('Text', asText, () => setTextMode(songIndex, true)),
+function renderNav() {
+  const prev = songs[active - 1];
+  const next = songs[active + 1];
+  const card = (kind, label, song, target) => {
+    const node = document.createElement('button');
+    node.type = 'button';
+    node.className = `nav-card ${kind}`;
+    const k = document.createElement('span');
+    k.className = 'k';
+    k.textContent = label;
+    const v = document.createElement('span');
+    v.className = 'v';
+    v.textContent = song.title;
+    node.append(k, v);
+    node.addEventListener('click', () => selectSong(target));
+    return node;
+  };
+  dom.songNav.replaceChildren(
+    ...(prev ? [card('prev', '← Previous', prev, active - 1)] : []),
+    ...(next ? [card('next', 'Next song →', next, active + 1)] : []),
   );
-
-  const actions = document.createElement('div');
-  actions.className = 'song-actions';
-  const copy = button('Copy text', 'small copy', () => copySong(songIndex, copy));
-  actions.append(
-    copy,
-    button('.pro', 'small', () => downloadPro(songIndex)),
-    button('.txt', 'small', () => downloadText(songIndex)),
-  );
-
-  const headLeft = document.createElement('div');
-  headLeft.className = 'song-head-main';
-  headLeft.append(toggle, title, meta);
-  head.append(headLeft, modes, actions);
-
-  const body = document.createElement('div');
-  body.className = 'song-body';
-  body.hidden = collapsed;
-
-  if (asText) {
-    body.append(renderTextEditor(songIndex));
-  } else {
-    if (song.arrangement.length) body.append(renderArrangement(song));
-    song.groups.forEach((group, groupIndex) => {
-      body.append(renderGroup(group, songIndex, groupIndex));
-    });
-  }
-
-  node.append(head, body);
-  return node;
+  dom.songNav.hidden = !prev && !next;
 }
-
-/** The play order, as coloured chips. */
-function renderArrangement(song) {
-  const node = document.createElement('div');
-  node.className = 'arrangement';
-  const label = document.createElement('span');
-  label.textContent = 'Arrangement:';
-  node.append(label);
-  for (const name of song.arrangement) {
-    const chip = document.createElement('span');
-    chip.className = 'chip';
-    chip.style.setProperty('--group', cssColor(groupColor(name)));
-    chip.textContent = name;
-    node.append(chip);
-  }
-  return node;
-}
-
-/** A triangle that folds the thing it sits in front of. */
-function disclosure(expanded, label, onClick) {
-  const node = document.createElement('button');
-  node.type = 'button';
-  node.className = 'disclosure';
-  node.setAttribute('aria-expanded', String(expanded));
-  node.title = label;
-  node.setAttribute('aria-label', label);
-  node.textContent = '▸';
-  node.addEventListener('click', onClick);
-  return node;
-}
-
-/** One half of the Slides/Text segmented control. */
-function modeButton(label, selected, onClick) {
-  const node = document.createElement('button');
-  node.type = 'button';
-  node.className = 'mode';
-  node.setAttribute('aria-pressed', String(selected));
-  node.textContent = label;
-  node.addEventListener('click', onClick);
-  return node;
-}
-
-/** Add to a set, or take away if it is already there. */
-const flip = (set, value) => (set.has(value) ? set.delete(value) : set.add(value));
 
 // ── editing a song as text ───────────────────────────────────────────────────
 
 /**
  * The whole song in one box, in the same shape "Copy text" produces.
  *
- * This is the fastest way to re-split a song by hand: a blank line is a slide
- * break, so moving one line onto the next slide is one keystroke rather than
- * two clicks and a retype. It is also the only way to rename a section or add
- * one that the parser never found.
+ * A blank line is a slide break, so moving one line onto the next slide is one
+ * keystroke. It is also the only way to rename a section or add one the parser
+ * never found.
  */
-function renderTextEditor(songIndex) {
+function renderTextEditor() {
   const node = document.createElement('div');
-  node.className = 'song-text';
-
-  const hint = document.createElement('p');
-  hint.className = 'hint-line';
-  hint.append(
-    'A blank line starts a new slide and ',
-    code('[Chorus 1]'),
-    ' names a section. ',
-    code('Apply'),
-    ' keeps the breaks exactly as you typed them; ',
-    code('Re-split'),
-    ' throws them away and re-runs the automatic layout.',
-  );
+  node.className = 'text-edit';
 
   const area = document.createElement('textarea');
   area.className = 'text-box';
   area.spellcheck = false;
-  area.setAttribute('aria-label', `${songs[songIndex].title} as text`);
-  area.value = songToText(songs[songIndex]);
-  // Capped so the buttons under the box stay within reach on a long song;
-  // the box itself is resizable for anyone who wants the whole thing at once.
-  area.rows = Math.min(24, area.value.split('\n').length + 2);
+  area.setAttribute('aria-label', `${songs[active].title} as text`);
+  area.value = drafts.get(active) ?? songToText(songs[active]);
+  area.addEventListener('input', () => drafts.set(active, area.value));
 
   const actions = document.createElement('div');
   actions.className = 'text-actions';
-  const apply = button('Apply', 'small primary', () => {
-    applyText(songIndex, area.value);
-    flash(apply, 'Applied');
-  });
+  const hint = document.createElement('span');
+  hint.className = 'text-hint';
+  hint.textContent =
+    'A blank line starts a new slide and [Chorus 1] names a section. Re-split re-runs the automatic layout.';
   actions.append(
-    apply,
-    button('Re-split', 'small', () => applyText(songIndex, area.value, { resplit: true })),
-    button('Revert', 'small ghost', () => {
-      area.value = songToText(songs[songIndex]);
+    button('Apply', 'btn primary', () => {
+      applyText(active, area.value);
+      toast('Applied');
+    }),
+    button('Re-split', 'btn secondary', () => {
+      applyText(active, area.value, { resplit: true });
+      toast('Re-split');
+    }),
+    button('Revert', 'btn ghost', () => {
+      drafts.delete(active);
+      area.value = songToText(songs[active]);
     }),
     hint,
   );
@@ -480,40 +566,28 @@ function renderTextEditor(songIndex) {
   return node;
 }
 
-const code = (text) => {
-  const node = document.createElement('code');
-  node.textContent = text;
-  return node;
-};
-
-/** The textarea holding one song's text, when that song is in text mode. */
-const songTextarea = (songIndex) =>
-  dom.songs.children[songIndex]?.querySelector('.song-text .text-box');
-
 /**
- * Switch a song between card and text editing.
+ * Switch the song on show between card and text editing.
  *
  * Leaving text mode applies what is in the box first. Making someone press
  * Apply before switching back would only ever lose work.
  */
-function setTextMode(songIndex, wantText) {
-  if (textMode.has(songIndex) === wantText) return;
-  if (!wantText) {
-    const area = songTextarea(songIndex);
-    if (area) {
-      applyText(songIndex, area.value, { redraw: false });
-    }
+function setTextMode(wantText) {
+  if (textMode.has(active) === wantText) return;
+  if (wantText) {
+    textMode.add(active);
+  } else {
+    if (drafts.has(active)) applyText(active, drafts.get(active), { redraw: false });
+    textMode.delete(active);
   }
-  flip(textMode, songIndex);
-  refreshSong(songIndex);
+  render();
 }
 
 /**
  * Read a song back out of its text box.
  *
  * `resplit` discards the typed slide breaks and re-runs the reflow with the
- * toolbar's current limits, which is the way back once a hand-split has got
- * away from you.
+ * current limits, which is the way back once a hand-split has got away from you.
  */
 function applyText(songIndex, text, { resplit = false, redraw = true } = {}) {
   const parsedText = parseSongText(text);
@@ -538,9 +612,10 @@ function applyText(songIndex, text, { resplit = false, redraw = true } = {}) {
     groups,
     arrangement: reconcileArrangement(song.arrangement, groups),
   };
+  drafts.delete(songIndex);
   edited = true;
-  if (redraw) refreshSong(songIndex);
-  updateExport();
+  if (redraw) render();
+  else renderChrome();
 }
 
 /**
@@ -561,123 +636,147 @@ function reconcileArrangement(previous, groups) {
 
 // ── sections and slides ──────────────────────────────────────────────────────
 
-function renderGroup(group, songIndex, groupIndex) {
+/** Which colour family a section belongs to; the colours live in styles.css. */
+function groupKind(group) {
+  if (group.blank) return 'blank';
+  const name = group.name.toLowerCase();
+  if (/^pre/.test(name)) return 'pre';
+  if (/chorus/.test(name)) return 'chorus';
+  if (/verse/.test(name)) return 'verse';
+  if (/bridge/.test(name)) return 'bridge';
+  if (/tag|repeat|outro|ending/.test(name)) return 'tag';
+  if (/interlude|inst/.test(name)) return 'interlude';
+  return 'other';
+}
+
+function renderGroup(group, groupIndex) {
   const node = document.createElement('section');
   node.className = 'group';
-  node.style.setProperty('--group', cssColor(groupColor(group.name)));
-  if (group.blank) node.classList.add('group-blank');
-
-  const key = `${songIndex}:${groupIndex}`;
-  const collapsed = collapsedGroups.has(key);
-  node.classList.toggle('collapsed', collapsed);
+  node.dataset.kind = groupKind(group);
 
   const head = document.createElement('div');
   head.className = 'group-head';
-  const toggle = disclosure(!collapsed, `${collapsed ? 'Expand' : 'Collapse'} ${group.name}`, () => {
-    flip(collapsedGroups, key);
-    refreshSong(songIndex);
-  });
-  const swatch = document.createElement('span');
-  swatch.className = 'group-swatch';
+  const dot = document.createElement('span');
+  dot.className = 'dot';
   const name = document.createElement('span');
   name.className = 'group-name';
-  name.textContent = group.name;
-  name.addEventListener('click', () => toggle.click());
+  name.textContent = group.blank ? 'Opening blank' : group.name;
   const count = document.createElement('span');
   count.className = 'group-count';
-  const n = countGroupSlides(group);
-  count.textContent = `${n} slide${n === 1 ? '' : 's'}`;
-  head.append(toggle, swatch, name, count);
+  count.textContent = groupCountLabel(group);
+  head.append(dot, name, count);
 
   const slides = document.createElement('div');
   slides.className = 'slides';
-  slides.hidden = collapsed;
   group.slides.forEach((lines, slideIndex) => {
-    slides.append(renderSlide(lines, songIndex, groupIndex, slideIndex));
+    slides.append(renderSlide(lines, groupIndex, slideIndex));
   });
   // Appends to the end, and is the only way back into a group whose slides
   // have all been deleted.
-  slides.append(addSlideCard(songIndex, groupIndex));
+  if (!group.blank) slides.append(addSlideCard(groupIndex));
 
   // Dropping on the gaps between cards - or anywhere in an empty section -
   // means "put it at the end here", which is what makes a section with no
   // slides left a reachable target at all.
   slides.addEventListener('dragover', (event) => {
-    if (!isDropTarget(songIndex)) return;
+    if (!dragging || group.blank) return;
     event.preventDefault();
     event.dataTransfer.dropEffect = 'move';
   });
   slides.addEventListener('drop', (event) => {
-    if (!isDropTarget(songIndex)) return;
+    if (!dragging || group.blank) return;
     event.preventDefault();
-    moveSlide(dragging, { groupIndex, at: songs[songIndex].groups[groupIndex].slides.length });
+    moveSlide(dragging, { groupIndex, at: songs[active].groups[groupIndex].slides.length });
   });
 
   node.append(head, slides);
   return node;
 }
 
+const groupCountLabel = (group) =>
+  group.blank ? 'Cue the song before the first line goes up' : plural(countGroupSlides(group), 'slide');
+
 /** The dashed card at the end of a group that appends a blank slide. */
-function addSlideCard(songIndex, groupIndex) {
+function addSlideCard(groupIndex) {
   const node = document.createElement('button');
   node.type = 'button';
-  node.className = 'slide slide-add';
+  node.className = 'slide-add';
   node.title = 'Add a slide to the end of this section';
-  node.setAttribute('aria-label', `Add a slide to ${songs[songIndex].groups[groupIndex].name}`);
+  node.setAttribute('aria-label', `Add a slide to ${songs[active].groups[groupIndex].name}`);
   node.textContent = '+';
   node.addEventListener('click', () => {
-    const group = songs[songIndex].groups[groupIndex];
-    insertSlide(songIndex, groupIndex, group.slides.length);
+    insertSlide(groupIndex, songs[active].groups[groupIndex].slides.length);
   });
   return node;
 }
 
-function renderSlide(lines, songIndex, groupIndex, slideIndex) {
-  const group = songs[songIndex].groups[groupIndex];
+function slideCaption(group, slideIndex, empty) {
+  const n = slideIndex + 1;
+  return empty && !group.blank ? `${n} · empty, skipped on export` : String(n);
+}
+
+function renderSlide(lines, groupIndex, slideIndex) {
+  const group = songs[active].groups[groupIndex];
   const node = document.createElement('div');
   node.className = 'slide';
-  if (group.blank) node.classList.add('slide-blank');
-  if (lines.length === 0 || lines.every((line) => line.trim() === '')) {
-    node.classList.add(group.blank ? 'blank' : 'empty');
-  }
+  const empty = isEmptySlide(lines);
+  node.classList.toggle('blank', empty && Boolean(group.blank));
+  node.classList.toggle('empty', empty && !group.blank);
 
-  const index = document.createElement('span');
-  index.className = 'slide-index';
-  index.textContent = slideIndex + 1;
-
+  const card = document.createElement('div');
+  card.className = 'card';
   const area = document.createElement('textarea');
   area.value = lines.join('\n');
   area.rows = Math.max(2, lines.length);
   area.spellcheck = false;
   area.setAttribute('aria-label', `Slide ${slideIndex + 1}`);
-  if (group.blank) area.placeholder = 'Blank — nothing is projected';
+  area.placeholder = group.blank ? 'Blank — nothing is projected' : 'Type a line…';
+  card.append(area);
+
+  const caption = document.createElement('div');
+  caption.className = 'caption';
+  const label = document.createElement('span');
+  label.className = 'cap-text';
+  label.textContent = slideCaption(group, slideIndex, empty);
+
   area.addEventListener('input', () => {
-    const current = songs[songIndex].groups[groupIndex];
+    const current = songs[active].groups[groupIndex];
     current.slides[slideIndex] = area.value
       .split('\n')
       .map((l) => l.trim())
       .filter((l) => l !== '');
     edited = true;
-    const isEmpty = current.slides[slideIndex].length === 0;
-    node.classList.toggle('empty', isEmpty && !current.blank);
-    node.classList.toggle('blank', isEmpty && Boolean(current.blank));
-    updateCounts();
+    const nowEmpty = current.slides[slideIndex].length === 0;
+    node.classList.toggle('empty', nowEmpty && !current.blank);
+    node.classList.toggle('blank', nowEmpty && Boolean(current.blank));
+    label.textContent = slideCaption(current, slideIndex, nowEmpty);
+    area.rows = Math.max(2, area.value.split('\n').length);
+    updateCounts(groupIndex);
   });
 
-  const controls = document.createElement('div');
-  controls.className = 'slide-controls';
-  controls.append(
-    iconButton('+', `Add a slide after slide ${slideIndex + 1}`, () =>
-      insertSlide(songIndex, groupIndex, slideIndex + 1),
-    ),
-    iconButton('×', `Remove slide ${slideIndex + 1}`, () =>
-      removeSlide(songIndex, groupIndex, slideIndex),
-    ),
-  );
+  const tools = document.createElement('div');
+  tools.className = 'cap-tools';
+  if (!group.blank) {
+    tools.append(
+      grip(node, groupIndex, slideIndex),
+      cardButton('+', `Add a slide after slide ${slideIndex + 1}`, () => insertSlide(groupIndex, slideIndex + 1)),
+      cardButton('×', `Remove slide ${slideIndex + 1}`, () => removeSlide(groupIndex, slideIndex)),
+    );
+  }
+  caption.append(label, tools);
 
-  node.append(index, grip(node, songIndex, groupIndex, slideIndex), area, controls);
-  attachDragTarget(node, songIndex, groupIndex, slideIndex);
+  node.append(card, caption);
+  if (!group.blank) attachDragTarget(node, groupIndex, slideIndex);
   return node;
+}
+
+/** Refresh the tallies after an edit, without touching the cards. */
+function updateCounts(groupIndex) {
+  const song = songs[active];
+  const groupNode = dom.songBody.querySelectorAll('.group')[groupIndex];
+  const count = groupNode?.querySelector('.group-count');
+  if (count) count.textContent = groupCountLabel(song.groups[groupIndex]);
+  renderChrome();
 }
 
 /**
@@ -688,10 +787,10 @@ function renderSlide(lines, songIndex, groupIndex, slideIndex) {
  * where most of the editing happens. It is a real button, so the same reorder
  * is available from the keyboard with the arrow keys.
  */
-function grip(node, songIndex, groupIndex, slideIndex) {
+function grip(node, groupIndex, slideIndex) {
   const handle = document.createElement('button');
   handle.type = 'button';
-  handle.className = 'slide-grip';
+  handle.className = 'card-btn grip';
   handle.title = 'Drag to move this slide — or use the arrow keys';
   handle.setAttribute('aria-label', `Move slide ${slideIndex + 1}`);
   handle.textContent = '⠿';
@@ -708,11 +807,11 @@ function grip(node, songIndex, groupIndex, slideIndex) {
       : 0;
     if (step === 0) return;
     event.preventDefault();
-    nudgeSlide(songIndex, groupIndex, slideIndex, step);
+    nudgeSlide(groupIndex, slideIndex, step);
   });
 
   node.addEventListener('dragstart', (event) => {
-    dragging = { songIndex, groupIndex, slideIndex };
+    dragging = { groupIndex, slideIndex };
     event.dataTransfer.effectAllowed = 'move';
     // Firefox refuses to start a drag unless the transfer carries something.
     event.dataTransfer.setData('text/plain', node.querySelector('textarea')?.value ?? '');
@@ -728,13 +827,10 @@ function grip(node, songIndex, groupIndex, slideIndex) {
   return handle;
 }
 
-/** Is there a drag in flight, and does it belong to this song? */
-const isDropTarget = (songIndex) => dragging !== null && dragging.songIndex === songIndex;
-
 /** Wire one slide card up as a place another slide can be dropped. */
-function attachDragTarget(node, songIndex, groupIndex, slideIndex) {
+function attachDragTarget(node, groupIndex, slideIndex) {
   node.addEventListener('dragover', (event) => {
-    if (!isDropTarget(songIndex)) return;
+    if (!dragging) return;
     event.preventDefault();
     event.stopPropagation();
     event.dataTransfer.dropEffect = 'move';
@@ -745,7 +841,7 @@ function attachDragTarget(node, songIndex, groupIndex, slideIndex) {
     node.classList.remove('drop-before', 'drop-after');
   });
   node.addEventListener('drop', (event) => {
-    if (!isDropTarget(songIndex)) return;
+    if (!dragging) return;
     event.preventDefault();
     // Without this the section underneath also handles the drop and sends the
     // slide to the end instead of where it was let go.
@@ -773,16 +869,16 @@ function dropsAfter(event, node) {
 }
 
 const clearDropHints = () => {
-  for (const node of dom.songs.querySelectorAll('.drop-before, .drop-after')) {
+  for (const node of dom.songBody.querySelectorAll('.drop-before, .drop-after')) {
     node.classList.remove('drop-before', 'drop-after');
   }
 };
 
-/** A small square control that sits on a slide. */
-function iconButton(glyph, label, onClick) {
+/** A small square control under a slide card. */
+function cardButton(glyph, label, onClick) {
   const node = document.createElement('button');
   node.type = 'button';
-  node.className = 'slide-control';
+  node.className = 'card-btn';
   node.textContent = glyph;
   node.title = label;
   node.setAttribute('aria-label', label);
@@ -800,11 +896,11 @@ function iconButton(glyph, label, onClick) {
  * shifted. Redrawing reads from `songs`, which already holds the edits, so
  * nothing typed is lost.
  */
-function insertSlide(songIndex, groupIndex, at) {
-  songs[songIndex].groups[groupIndex].slides.splice(at, 0, ['']);
+function insertSlide(groupIndex, at) {
+  songs[active].groups[groupIndex].slides.splice(at, 0, ['']);
   edited = true;
-  refreshSong(songIndex);
-  slideTextarea(songIndex, groupIndex, at)?.focus();
+  render();
+  slideTextarea(groupIndex, at)?.focus();
 }
 
 /**
@@ -815,10 +911,10 @@ function insertSlide(songIndex, groupIndex, at) {
  * last slide of a section leaves the section empty, and an empty section is
  * dropped from both exports.
  */
-function removeSlide(songIndex, groupIndex, at) {
-  songs[songIndex].groups[groupIndex].slides.splice(at, 1);
+function removeSlide(groupIndex, at) {
+  songs[active].groups[groupIndex].slides.splice(at, 1);
   edited = true;
-  refreshSong(songIndex);
+  render();
 }
 
 /**
@@ -830,10 +926,10 @@ function removeSlide(songIndex, groupIndex, at) {
  */
 function moveSlide(from, to) {
   if (!from) return;
-  const groups = songs[from.songIndex].groups;
+  const groups = songs[active].groups;
   const source = groups[from.groupIndex];
   const target = groups[to.groupIndex];
-  if (!source || !target) return;
+  if (!source || !target || target.blank) return;
 
   let at = to.at;
   if (source === target) {
@@ -845,7 +941,8 @@ function moveSlide(from, to) {
   if (slide === undefined) return;
   target.slides.splice(Math.max(0, Math.min(at, target.slides.length)), 0, slide);
   edited = true;
-  refreshSong(from.songIndex);
+  dragging = null;
+  render();
 }
 
 /**
@@ -855,59 +952,42 @@ function moveSlide(from, to) {
  * everywhere a drag does. Focus follows the slide, so a run of presses moves it
  * as far as it needs to go.
  */
-function nudgeSlide(songIndex, groupIndex, slideIndex, step) {
-  const groups = songs[songIndex].groups;
+function nudgeSlide(groupIndex, slideIndex, step) {
+  const groups = songs[active].groups;
   const within = slideIndex + step;
 
   if (within >= 0 && within < groups[groupIndex].slides.length) {
-    moveSlide(
-      { songIndex, groupIndex, slideIndex },
-      { groupIndex, at: step > 0 ? within + 1 : within },
-    );
-    focusGrip(songIndex, groupIndex, within);
+    moveSlide({ groupIndex, slideIndex }, { groupIndex, at: step > 0 ? within + 1 : within });
+    focusGrip(groupIndex, within);
     return;
   }
 
   const nextGroup = groupIndex + step;
   if (nextGroup < 0 || nextGroup >= groups.length) return;
   const at = step > 0 ? 0 : groups[nextGroup].slides.length;
-  moveSlide({ songIndex, groupIndex, slideIndex }, { groupIndex: nextGroup, at });
-  focusGrip(songIndex, nextGroup, step > 0 ? 0 : groups[nextGroup].slides.length - 1);
+  moveSlide({ groupIndex, slideIndex }, { groupIndex: nextGroup, at });
+  focusGrip(nextGroup, step > 0 ? 0 : groups[nextGroup].slides.length - 1);
 }
+
+const slideNodes = (groupIndex) =>
+  dom.songBody.querySelectorAll('.group')[groupIndex]?.querySelectorAll('.slide');
 
 /** Put focus back on a slide's handle after the song has been redrawn. */
-function focusGrip(songIndex, groupIndex, slideIndex) {
-  dom.songs.children[songIndex]
-    ?.querySelectorAll('.group')[groupIndex]
-    ?.querySelectorAll('.slide:not(.slide-add)')[slideIndex]
-    ?.querySelector('.slide-grip')
-    ?.focus();
+function focusGrip(groupIndex, slideIndex) {
+  slideNodes(groupIndex)?.[slideIndex]?.querySelector('.grip')?.focus();
 }
 
-/** Redraw one song in place, leaving the other songs and their edits alone. */
-function refreshSong(songIndex) {
-  const current = dom.songs.children[songIndex];
-  if (!current) return;
-  current.replaceWith(renderSong(songs[songIndex], songIndex));
-  updateExport();
-}
-
-const slideTextarea = (songIndex, groupIndex, slideIndex) =>
-  dom.songs.children[songIndex]
-    ?.querySelectorAll('.group')[groupIndex]
-    ?.querySelectorAll('.slide textarea')[slideIndex];
+const slideTextarea = (groupIndex, slideIndex) =>
+  slideNodes(groupIndex)?.[slideIndex]?.querySelector('textarea');
 
 function button(label, className, onClick) {
   const node = document.createElement('button');
   node.type = 'button';
-  node.className = className;
+  if (className) node.className = className;
   node.textContent = label;
   node.addEventListener('click', onClick);
   return node;
 }
-
-const cssColor = (c) =>
-  `rgb(${Math.round(c.red * 255)} ${Math.round(c.green * 255)} ${Math.round(c.blue * 255)})`;
 
 // ── clipboard ────────────────────────────────────────────────────────────────
 
@@ -915,37 +995,19 @@ const cssColor = (c) =>
  * Copy text, telling the user which way it went.
  *
  * `navigator.clipboard` needs a secure context and can still be refused by
- * permissions policy, so a failure is expected rather than exceptional: the
- * preview panel below the song holds the same text, and the message points at
- * it instead of leaving the button looking broken.
+ * permissions policy, so a failure is expected rather than exceptional.
  */
-async function copyToClipboard(text, trigger) {
+async function copyToClipboard(text, message) {
   try {
     await navigator.clipboard.writeText(text);
-    flash(trigger, 'Copied');
-    return true;
+    toast(message);
   } catch (error) {
     console.error(error);
-    setStatus('Could not reach the clipboard. Open "Show the text" and copy it by hand.', true);
-    return false;
+    toast('Could not reach the clipboard');
   }
 }
 
-/** Briefly swap a button's label to confirm the click did something. */
-function flash(node, label) {
-  if (!node) return;
-  const original = node.dataset.label ?? node.textContent;
-  node.dataset.label = original;
-  node.textContent = label;
-  node.classList.add('done');
-  clearTimeout(Number(node.dataset.timer));
-  node.dataset.timer = String(setTimeout(() => {
-    node.textContent = node.dataset.label ?? original;
-    node.classList.remove('done');
-  }, 1400));
-}
-
-const copySong = (index, trigger) => copyToClipboard(songToText(songs[index]), trigger);
+const copySong = () => copyToClipboard(songToText(songs[active]), `Copied ${songs[active].title}`);
 
 /**
  * Copy every song as one block.
@@ -955,9 +1017,11 @@ const copySong = (index, trigger) => copyToClipboard(songToText(songs[index]), t
  * each song also has its own button. Each song already opens on its own title
  * line, so run together there is still something to show where one ends.
  */
-function copyAllSongs(trigger) {
-  return copyToClipboard(songs.map((song) => songToText(song)).join('\n'), trigger);
-}
+const copyAllSongs = () =>
+  copyToClipboard(
+    songs.map((song) => songToText(song)).join('\n'),
+    songs.length === 1 ? `Copied ${songs[0].title}` : `Copied ${songs.length} songs`,
+  );
 
 // ── downloads ────────────────────────────────────────────────────────────────
 
@@ -976,11 +1040,13 @@ const renderFiles = () => toFiles(songs, readSettings());
 function downloadPro(index) {
   const { pro } = renderFiles()[index];
   saveBlob(new Blob([pro.bytes], { type: 'application/octet-stream' }), pro.name);
+  toast(`Downloaded ${pro.name}`);
 }
 
 function downloadText(index) {
   const { text } = renderFiles()[index];
   saveBlob(new Blob([text.text], { type: 'text/plain' }), text.name);
+  toast(`Downloaded ${text.name}`);
 }
 
 async function downloadAll() {
@@ -991,7 +1057,7 @@ async function downloadAll() {
     return;
   }
   if (typeof JSZip === 'undefined') {
-    setStatus('The zip library did not load; download songs individually.', true);
+    toast('The zip library did not load; download songs individually.');
     return;
   }
   const zip = new JSZip();
@@ -1001,27 +1067,11 @@ async function downloadAll() {
   }
   const blob = await zip.generateAsync({ type: 'blob' });
   saveBlob(blob, `${sourceName}.zip`);
+  toast(`Downloaded ${sourceName}.zip`);
 }
 
 // ── events ───────────────────────────────────────────────────────────────────
 
-function setStatus(message, isError = false) {
-  dom.status.textContent = message;
-  dom.status.classList.toggle('error', isError);
-}
-
-function onSettingChanged() {
-  if (!parsed.length) return;
-  if (edited && !confirm('Re-splitting the slides will discard your edits. Continue?')) {
-    return;
-  }
-  relayout();
-}
-
-dom.browse.addEventListener('click', (event) => {
-  event.stopPropagation();
-  dom.file.click();
-});
 dom.drop.addEventListener('click', () => dom.file.click());
 dom.drop.addEventListener('keydown', (event) => {
   if (event.key === 'Enter' || event.key === ' ') {
@@ -1045,16 +1095,14 @@ dom.drop.addEventListener('drop', (event) => {
   loadPdf(event.dataTransfer?.files?.[0]);
 });
 
-// Layout settings re-split the slides; styling settings only affect export.
-for (const control of [
-  dom.maxLines, dom.maxChars, dom.rejoinHyphens, dom.straightQuotes, dom.dropTrailingCommas,
-  dom.blankFirstSlide,
-]) {
-  control.addEventListener('change', onSettingChanged);
-}
-
 dom.downloadAll.addEventListener('click', downloadAll);
-dom.copyAll.addEventListener('click', () => copyAllSongs(dom.copyAll));
+dom.copyAll.addEventListener('click', copyAllSongs);
+dom.copySong.addEventListener('click', copySong);
+dom.dlPro.addEventListener('click', () => downloadPro(active));
+dom.dlTxt.addEventListener('click', () => downloadText(active));
+dom.modeSlides.addEventListener('click', () => setTextMode(false));
+dom.modeText.addEventListener('click', () => setTextMode(true));
+
 dom.reset.addEventListener('click', () => {
   parsed = [];
   songs = [];
@@ -1062,13 +1110,33 @@ dom.reset.addEventListener('click', () => {
   resetView();
   dom.file.value = '';
   dom.paste.value = '';
-  dom.results.hidden = true;
   setStatus('');
+  closeDrawer();
+  showScreen('input');
+});
+
+// ↑/↓ and j/k switch songs when focus is not in a field.
+document.addEventListener('keydown', (event) => {
+  if (event.defaultPrevented) return;
+  if (event.key === 'Escape') {
+    closeDrawer();
+    return;
+  }
+  if (dom.results.hidden || !dom.backdrop.hidden) return;
+  if (event.metaKey || event.ctrlKey || event.altKey) return;
+  if (['TEXTAREA', 'INPUT', 'SELECT'].includes(document.activeElement?.tagName)) return;
+  if (event.key === 'ArrowDown' || event.key === 'j') {
+    event.preventDefault();
+    selectSong(active + 1);
+  } else if (event.key === 'ArrowUp' || event.key === 'k') {
+    event.preventDefault();
+    selectSong(active - 1);
+  }
 });
 
 // ── input mode ───────────────────────────────────────────────────────────────
 
-/** Switch between the file and paste inputs. Parsed songs are left alone. */
+/** Switch between the file and paste inputs. */
 function showTab(which) {
   const paste = which === 'paste';
   dom.tabPaste.setAttribute('aria-selected', String(paste));
@@ -1118,3 +1186,5 @@ dom.pasteSample.addEventListener('click', () => {
   dom.paste.value = SAMPLE;
   loadPastedText();
 });
+
+buildDrawer();

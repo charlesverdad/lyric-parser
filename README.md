@@ -36,14 +36,17 @@ or download it as a `.pro` file.
 - **Keeps the structure.** Verse, Chorus and Bridge become ProPresenter groups
   in their usual colours, with an arrangement that plays them back in printed
   order — repeats (`x2`, `x5`) included.
-- **Everything is editable** before you export: type into any slide, drag
-  slides between sections, fold a song or a section away, tab between songs,
-  or switch a whole song to text and put the slide breaks exactly where you
-  want them. Every judgement call the parser made is listed above the results.
-  Clearing a slide leaves a placeholder you can type back into; removing one
-  takes it away, and a section left with no slides drops out of both exports.
+- **Everything is editable** before you export. Songs are listed in a sidebar
+  (a strip of chips on a narrow window) and one is shown at a time; `↑`/`↓` or
+  `j`/`k` switch between them. Type into any slide, add or remove slides with
+  the `+` and `×` under each card, drag slides between sections by their `⠿`
+  handle, or switch a song to *Text* and put the slide breaks exactly where you
+  want them. Anything the parser was unsure of is flagged above the slides.
+  Clearing a slide leaves a placeholder you can type back into (it reads
+  "empty, skipped on export"); removing one takes it away, and a section left
+  with no slides drops out of both exports.
 - **Every song opens on a blank slide**, so it can be cued before the first
-  line goes up. Turn it off in the toolbar if you would rather it did not.
+  line goes up. Turn it off in Settings if you would rather it did not.
 
 ## Two ways in
 
@@ -88,7 +91,7 @@ vendored in `proto/`. They are unofficial and unsupported by Renewed Vision.
 
 ```
 index.html          the app
-styles.css
+styles.css         monochrome theme, all colours as custom properties
 js/
   app.js            browser wiring: load, render, edit, download
   pipeline.js       the whole conversion, shared by app and CLI
